@@ -55,7 +55,10 @@ flowchart LR
 - The companion carries no Copilot runtime. The SDK starts the
   [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) already on your
   Mac, which is what talks to GitHub. The companion looks for it as it starts and tells the
-  panel what it found, so a missing or too-old CLI is explained before you paste a PAT.
+  panel what it found, so a CLI that is absent, or a program that is not the Copilot CLI at
+  all, is explained before you paste a PAT. Whether a real Copilot CLI is compatible is
+  settled by the SDK's protocol handshake, which happens when you connect, so an
+  incompatible one is reported then rather than at startup.
 
 The companion process itself cannot be dropped, even though it now carries no runtime.
 Chrome gives an extension exactly one way to reach a local program: a native messaging host
@@ -321,9 +324,11 @@ If something fails:
   result, and delete any leftover item in Keychain Access.
 - **`companion_*` codes:** the panel names the fix. Most need the package installed again,
   followed by **Try again**.
-- **`missing` or `unsupported` before you paste a PAT:** the companion reports what it
-  found when it started, so the panel explains a missing or unusable Copilot CLI without
-  taking a PAT it could not use. **Sign out** still works, so a saved PAT can be deleted.
+- **`missing` or `unsupported` before you paste a PAT:** what the companion found when it
+  started. `missing` is no Copilot CLI at all; `unsupported` is a program that does not
+  identify itself as one. The panel explains either without taking a PAT it could not use,
+  and **Sign out** still works, so a saved PAT can be deleted. A Copilot CLI that is merely
+  the wrong version passes this check and fails later, as `runtime_unsupported` above.
 
 Stop when GitHub denies access. Do not work around a denial with a stored login, a `gh`
 token, a classic PAT, a borrowed OAuth app ID, editor impersonation or a custom
@@ -475,8 +480,8 @@ Accepted risks:
   ones this lockdown relies on. `pnpm install --frozen-lockfile` installs the exact version
   pinned in `pnpm-lock.yaml`, `pnpm list @github/copilot-sdk` names it, and the companion
   build carries that version. After updating the SDK, review
-  `src/companion/sdk-gateway.ts` and the minimum Copilot CLI version in
-  `src/protocol/messages.ts`, then run `pnpm check`, install a new package and repeat
+  `src/companion/sdk-gateway.ts`, including the protocol-mismatch message it matches to
+  report `runtime_unsupported`, then run `pnpm check`, install a new package and repeat
   the live check.
 - The Copilot CLI is no longer pinned by this project: it is whatever is installed on your
   Mac, and it updates itself. The SDK's protocol handshake catches a CLI that is too old or
@@ -536,8 +541,8 @@ The browser tests:
 - Use the real installer to register a scripted fake companion in a throwaway Chromium
   profile.
 - Load the built extension and drive every panel state, including the first-run PAT
-  prompt, a missing companion, a missing or too-old Copilot CLI, rejected tokens, no
-  models, saving, reusing, replacing and
+  prompt, a missing companion, a missing Copilot CLI and a program that is not one,
+  rejected tokens, no models, saving, reusing, replacing and
   unreadable saved PATs, signing out, multi-turn chat, model switches, New chat, including
   a page (with Chrome's scripting stubbed, because a test cannot click the toolbar icon to
   grant `activeTab`) and refusing to when access is missing, keyboard
