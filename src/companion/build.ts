@@ -1,18 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { constants } from "node:fs";
-import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
+import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "rolldown";
 import { DELETE_SAVED_PAT_OPTION, KEEP_SAVED_PAT_OPTION, UNINSTALL_OPTION } from "./install.ts";
 import {
   BUILD_INFO_ASSET,
-  bundledRuntimePath,
   COMPANION_EXECUTABLE_NAME,
   LICENSE_FILE_NAME,
   NOTICES_FILE_NAME,
-  RUNTIME_DIRECTORY_NAME,
   UNINSTALL_SCRIPT_NAME,
 } from "./layout.ts";
 import type { BuildInfo } from "./layout.ts";
@@ -69,7 +65,7 @@ export async function runBuilder({ platform, arch, outputDirectory, output }: Bu
     return FAILURE;
   }
   try {
-    const { sdkVersion, missingNodeLicensePath } = await buildCompanion(arch, outputDirectory);
+    const { sdkVersion, missingNodeLicensePath } = await buildCompanion(outputDirectory);
     output.log(`Built the Prompt Harbor companion for ${SUPPORTED_PLATFORM}-${arch} with Copilot SDK ${sdkVersion}:`);
     output.log(`  ${outputDirectory}`);
     if (missingNodeLicensePath !== undefined) {
@@ -86,8 +82,8 @@ export async function runBuilder({ platform, arch, outputDirectory, output }: Bu
 
 // The build runs this Node.js binary's single executable application support, so it produces a
 // companion for this Node.js binary's architecture only.
-async function buildCompanion(arch: string, outputDirectory: string): Promise<BuildInfo & { missingNodeLicensePath?: string }> {
-  const { sdkVersion, runtimePackageDirectory } = await locateSdk(arch);
+async function buildCompanion(outputDirectory: string): Promise<BuildInfo & { missingNodeLicensePath?: string }> {
+  const sdkVersion = await readSdkVersion();
   await mkdir(dirname(outputDirectory), { recursive: true });
   await removeStaleStagingDirectories(outputDirectory);
   const staging = await mkdtemp(`${outputDirectory}${STAGING_SUFFIX}`);
@@ -119,19 +115,11 @@ async function buildCompanion(arch: string, outputDirectory: string): Promise<Bu
     runTool(process.execPath, ["--build-sea", seaConfigPath]);
     runTool(CODESIGN_PATH, ["--sign", "-", "--force", executablePath]);
 
-    await cp(runtimePackageDirectory, join(companionDirectory, RUNTIME_DIRECTORY_NAME), {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      mode: constants.COPYFILE_FICLONE,
-      verbatimSymlinks: true,
-    });
-    await checkRuntimeFiles(bundledRuntimePath(companionDirectory, arch));
     await writeFile(join(companionDirectory, UNINSTALL_SCRIPT_NAME), UNINSTALL_SCRIPT);
     await chmod(join(companionDirectory, UNINSTALL_SCRIPT_NAME), EXECUTABLE_MODE);
     await copyFile(join(repositoryRoot, "LICENSE"), join(companionDirectory, LICENSE_FILE_NAME));
     const node = await describeNode(process.execPath, process.version);
-    await writeFile(join(companionDirectory, NOTICES_FILE_NAME), await thirdPartyNotices(node, bundledModuleIds, runtimePackageDirectory));
+    await writeFile(join(companionDirectory, NOTICES_FILE_NAME), await thirdPartyNotices(node, bundledModuleIds));
     checkCompanionRefusesToStartAlone(executablePath);
 
     await rm(outputDirectory, { recursive: true, force: true });
@@ -142,25 +130,11 @@ async function buildCompanion(arch: string, outputDirectory: string): Promise<Bu
   }
 }
 
-async function locateSdk(arch: string) {
+// The companion drives the Copilot CLI the user installed, so only the SDK's own version is
+// recorded here. Its platform runtime package is no longer copied into the build.
+async function readSdkVersion() {
   const sdkManifestPath = fileURLToPath(new URL("../package.json", import.meta.resolve("@github/copilot-sdk")));
-  const sdkVersion = await readPackageVersion(sdkManifestPath);
-  const runtimePackage = `@github/copilot-sdk-${SUPPORTED_PLATFORM}-${arch}`;
-  let runtimeManifestPath: string;
-  try {
-    runtimeManifestPath = createRequire(sdkManifestPath).resolve(`${runtimePackage}/package.json`);
-  } catch {
-    throw new CompanionBuildError(
-      `${runtimePackage} is not installed. Run pnpm install --frozen-lockfile on this Mac, without --no-optional.`,
-    );
-  }
-  const runtimeVersion = await readPackageVersion(runtimeManifestPath);
-  if (runtimeVersion !== sdkVersion) {
-    throw new CompanionBuildError(
-      `${runtimePackage} ${runtimeVersion} does not match @github/copilot-sdk ${sdkVersion}. Run pnpm install --frozen-lockfile.`,
-    );
-  }
-  return { sdkVersion, runtimePackageDirectory: dirname(runtimeManifestPath) };
+  return readPackageVersion(sdkManifestPath);
 }
 
 async function readPackageVersion(manifestPath: string) {
@@ -189,16 +163,15 @@ async function bundleCompanion(bundlePath: string) {
   }
 }
 
-async function thirdPartyNotices(node: NoticeComponent, bundledModuleIds: readonly string[], runtimePackageDirectory: string) {
+async function thirdPartyNotices(node: NoticeComponent, bundledModuleIds: readonly string[]) {
   const bundledPackages = await Promise.all(
     (await findPackageDirectories(bundledModuleIds)).map((directory) => describePackage(directory, "Bundled into the companion executable.")),
   );
-  const runtimePackage = await describePackage(runtimePackageDirectory, `Included unchanged as ${RUNTIME_DIRECTORY_NAME}/.`);
-  return formatNotices([node, ...bundledPackages.sort((first, second) => first.name.localeCompare(second.name)), runtimePackage]);
+  return formatNotices([node, ...bundledPackages.sort((first, second) => first.name.localeCompare(second.name))]);
 }
 
-// The SDK needs koffi only for its in-process runtime. The companion always starts the runtime as
-// a child process, and a single executable application could not load koffi's native addon anyway.
+// The SDK needs koffi only for its in-process runtime. The companion always starts the Copilot CLI
+// as a child process, and a single executable application could not load koffi's native addon anyway.
 function stubKoffi(): Plugin {
   return {
     name: "prompt-harbor:stub-koffi",
@@ -210,15 +183,6 @@ function stubKoffi(): Plugin {
       return 'export default new Proxy({}, { get() { throw new Error("The companion does not include koffi."); } });';
     },
   };
-}
-
-async function checkRuntimeFiles(runtimePath: string) {
-  for (const path of [runtimePath, join(dirname(runtimePath), "runtime.node")]) {
-    const file = await stat(path).catch(() => undefined);
-    if (!file?.isFile() || file.size === 0) {
-      throw new CompanionBuildError(`The Copilot runtime is missing ${basename(path)}. Run pnpm install --frozen-lockfile.`);
-    }
-  }
 }
 
 function checkCompanionRefusesToStartAlone(executablePath: string) {

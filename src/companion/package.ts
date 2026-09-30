@@ -3,8 +3,8 @@ import { chmod, cp, mkdir, mkdtemp, readdir, rename, rm, stat, writeFile } from 
 import { join } from "node:path";
 import { CompanionBuildError, runTool } from "./build.ts";
 import { companionInstallPaths } from "./install.ts";
-import { bundledRuntimePath, COMPANION_EXECUTABLE_NAME, LICENSE_FILE_NAME, NOTICES_FILE_NAME, UNINSTALL_SCRIPT_NAME } from "./layout.ts";
-import { compareVersions, readMachOSummary } from "./macho.ts";
+import { COMPANION_EXECUTABLE_NAME, LICENSE_FILE_NAME, NOTICES_FILE_NAME, UNINSTALL_SCRIPT_NAME } from "./layout.ts";
+import { readMachOSummary } from "./macho.ts";
 import { INSTALL_OPTION } from "./self-install.ts";
 import { HOST_NAME } from "../protocol/identity.ts";
 
@@ -195,7 +195,7 @@ export function welcomeText({ arch, minimumMacOSVersion }: Pick<PackageTarget, "
     "",
     `This package is for ${macKind(arch).macs} with macOS ${minimumMacOSVersion} or later.`,
     "",
-    `The companion includes Node.js and the GitHub Copilot SDK and its runtime, each under its own license. ${LICENSE_FILE_NAME} and ${NOTICES_FILE_NAME} in its folder give the terms.`,
+    `The companion includes Node.js and the GitHub Copilot SDK, each under its own license. ${LICENSE_FILE_NAME} and ${NOTICES_FILE_NAME} in its folder give the terms. It drives the GitHub Copilot CLI you install yourself, which is not included.`,
     "",
     "Prompt Harbor is an independent, unofficial project. It is not affiliated with, sponsored by or endorsed by GitHub.",
     "",
@@ -229,22 +229,16 @@ function checkTarget({ arch, minimumMacOSVersion, version }: PackageTarget) {
   if (!VERSION_PATTERN.test(version)) throw new CompanionBuildError(`${version} is not a version Installer accepts, such as 1.2.3.`);
 }
 
-// Reads the architecture and the newest minimum macOS version that the companion and its runtime
-// were built for, so the package refuses Macs they cannot run on.
+// Reads the architecture and minimum macOS version the companion was built for, so the package
+// refuses Macs it cannot run on. The Copilot CLI it drives is the user's, with its own requirements.
 async function describeBuild(buildDirectory: string) {
   for (const name of [COMPANION_EXECUTABLE_NAME, UNINSTALL_SCRIPT_NAME, LICENSE_FILE_NAME, NOTICES_FILE_NAME]) {
     if (!(await isFile(join(buildDirectory, name)))) {
       throw new CompanionBuildError(`No complete companion build was found in ${buildDirectory}. Run pnpm companion:package, which builds it first.`);
     }
   }
-  const companion = await readBinary(join(buildDirectory, COMPANION_EXECUTABLE_NAME));
-  const runtime = await readBinary(bundledRuntimePath(buildDirectory, companion.arch));
-  if (runtime.arch !== companion.arch) {
-    throw new CompanionBuildError(`The Copilot runtime in ${buildDirectory} is for ${runtime.arch}, but the companion is for ${companion.arch}.`);
-  }
-  const minimumMacOSVersion =
-    compareVersions(companion.minimumMacOSVersion, runtime.minimumMacOSVersion) >= 0 ? companion.minimumMacOSVersion : runtime.minimumMacOSVersion;
-  return { arch: companion.arch, minimumMacOSVersion };
+  const { arch, minimumMacOSVersion } = await readBinary(join(buildDirectory, COMPANION_EXECUTABLE_NAME));
+  return { arch, minimumMacOSVersion };
 }
 
 async function readBinary(path: string) {

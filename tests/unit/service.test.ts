@@ -27,6 +27,8 @@ function deferred<Value>() {
   return { promise, resolve, reject };
 }
 
+const READY_RUNTIME = { state: "ready", path: "/opt/homebrew/bin/copilot", version: "1.0.89-3" } as const;
+
 function itemAt<Item>(items: readonly Item[], index: number): Item {
   const item = items[index];
   if (item === undefined) throw new Error(`expected an item at index ${index}`);
@@ -81,6 +83,8 @@ function startService({ store = createFakeStore() } = {}) {
       gateways.push(fake);
       return fake.gateway;
     },
+    runtime: READY_RUNTIME,
+    resolveRuntime: async () => READY_RUNTIME,
     store,
     emit: (message) => emitted.push(message),
     onRuntimeStuck,
@@ -158,6 +162,8 @@ describe("connect", () => {
       createGateway: () => {
         throw new Error("mkdtemp failed");
       },
+      runtime: READY_RUNTIME,
+      resolveRuntime: async () => READY_RUNTIME,
       store: createFakeStore(),
       emit: (message) => emitted.push(message),
       onRuntimeStuck: () => {},
@@ -297,11 +303,11 @@ describe("saved PAT", () => {
     service.handle({ type: "connect_saved" });
     await settle();
     expect(emitted).toEqual([{ type: "error", stage: "connect", code }]);
-    expect(itemAt(gateways, 0).gateway.connect).not.toHaveBeenCalled();
-    expect(itemAt(gateways, 0).gateway.close).toHaveBeenCalledOnce();
+    // The Copilot CLI is never started for a PAT that could not be read.
+    expect(gateways).toHaveLength(0);
 
     service.handle({ type: "connect", token, remember: false });
-    expect(gateways).toHaveLength(2);
+    expect(gateways).toHaveLength(1);
   });
 
   it("counts reading the saved PAT toward the connect deadline", async () => {
@@ -315,7 +321,7 @@ describe("saved PAT", () => {
 
     reading.resolve(savedToken);
     await settle();
-    expect(itemAt(gateways, 0).gateway.connect).not.toHaveBeenCalled();
+    expect(gateways).toHaveLength(0);
     expect(emitted).toHaveLength(1);
   });
 

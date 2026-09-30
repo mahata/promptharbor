@@ -9,13 +9,15 @@ by or endorsed by GitHub.
 and its installer package are built and tested against a scripted fake companion. The
 companion builds into a self-contained executable for Apple silicon or Intel Macs, and into
 an installer package that installs it for your macOS user, after which it runs without
-Node.js, pnpm or this checkout. A [live check](#live-check) with a
+pnpm or this checkout. It carries Node.js but no Copilot runtime: it drives the
+[GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) you install
+yourself, so you must install that too. A [live check](#live-check) with a
 real fine-grained PAT has also verified authentication, model listing and multipliers,
 usage reporting, page access after a toolbar click, denied page access after a
-cross-origin navigation, authentication failure and sign-out, but with the earlier
-companion that ran from this checkout on Node.js. It has yet to be repeated with the
-self-contained build. The package is not signed or notarized yet, so it is for testing
-only.
+cross-origin navigation, authentication failure and sign-out, but with an earlier
+companion that ran from this checkout on Node.js and carried its own runtime. It has yet to
+be repeated with the self-contained build. The package is not signed or notarized yet, so
+it is for testing only.
 
 ## Why a local companion
 
@@ -34,8 +36,8 @@ so the experiment now uses that route instead:
 flowchart LR
   Panel["Side panel<br/>(no network access)"] -- "Chrome native messaging<br/>(stdio, JSON)" --> Companion["Companion<br/>(self-contained executable<br/>on this Mac)"]
   Companion -- "/usr/bin/security" --> Keychain["macOS login keychain<br/>(saved PAT)"]
-  Companion -- "Copilot SDK" --> Runtime["Bundled Copilot runtime"]
-  Runtime -- HTTPS --> GitHub["GitHub Copilot"]
+  Companion -- "Copilot SDK" --> Cli["GitHub Copilot CLI<br/>(you install it)"]
+  Cli -- HTTPS --> GitHub["GitHub Copilot"]
 ```
 
 - The extension cannot reach the network. It has no host permissions, and its CSP sets
@@ -50,6 +52,16 @@ flowchart LR
   companion and starts a fresh one that asks for a PAT. A saved PAT stays in your login
   keychain until you sign out, or until you choose to delete it when you uninstall the
   companion.
+- The companion carries no Copilot runtime. The SDK starts the
+  [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) already on your
+  Mac, which is what talks to GitHub. The companion looks for it as it starts and tells the
+  panel what it found, so a missing or too-old CLI is explained before you paste a PAT.
+
+The companion process itself cannot be dropped, even though it now carries no runtime.
+Chrome gives an extension exactly one way to reach a local program: a native messaging host
+registered in a manifest Chrome reads, speaking Chrome's own framing of a 4-byte
+little-endian length prefix and UTF-8 JSON, with the extension's origin passed as its first
+argument. The Copilot CLI does not speak that, and its `--acp` mode is a different protocol.
 
 ## Requirements
 
@@ -58,6 +70,14 @@ flowchart LR
   Chrome channels.
 - A GitHub account with Copilot access, and permission to create a fine-grained PAT for
   it.
+- The [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), version
+  1.0.85 or later, which the companion drives through the SDK. Install it with
+  `brew install --cask copilot-cli`, or however its documentation suggests. You do not need
+  to run `copilot login`: the companion authenticates with the PAT you give the panel, and
+  never uses a session you signed in elsewhere. The companion looks for it in your `PATH`
+  and in `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` and `~/.npm-global/bin`,
+  because Chrome starts the companion with only `/usr/bin:/bin:/usr/sbin:/sbin`. The
+  installer records where it found one, and `COPILOT_CLI_PATH` pins a particular one.
 - To build the companion or its package from this checkout: Node.js 26 and pnpm 10.33.0,
   on a Mac with the same architecture as the one that will run the companion. Install
   pnpm separately. The installed companion needs neither. To build a package that others
@@ -68,12 +88,19 @@ flowchart LR
 
 ## Install
 
-The companion comes as an installer package for each kind of Mac:
+First install the [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli),
+which the companion drives:
+
+```sh
+brew install --cask copilot-cli
+```
+
+The companion itself comes as an installer package for each kind of Mac:
 `prompt-harbor-companion-<version>-macos-arm64.pkg` for Apple silicon and
-`prompt-harbor-companion-<version>-macos-x64.pkg` for Intel. **About This Mac** says which
-kind yours is. There is no release yet, so build the package on a Mac of the same kind,
-or download it from the `companion-darwin-arm64` or `companion-darwin-x64` artifact of a
-CI run:
+`prompt-harbor-companion-<version>-macos-x64.pkg` for Intel, because it carries a Node.js
+binary built for one of them. **About This Mac** says which kind yours is. There is no
+release yet, so build the package on a Mac of the same kind, or download it from the
+`companion-darwin-arm64` or `companion-darwin-x64` artifact of a CI run:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -100,38 +127,46 @@ and select this checkout's `dist/` directory. The manifest's `key` pins the exte
 to `hdmfkhdfamhcfglofebjnoepkbbbihkg`, and the companion accepts only that ID. Open the
 extension from the toolbar, or press Ctrl+Shift+H on Windows/Linux or ⌘+Shift+H on
 macOS. It should ask for a fine-grained PAT. If it shows an error instead, the error
-names the fix.
+names the fix, including when it cannot find the GitHub Copilot CLI.
 
 ### What the package installs
 
 The package installs for your macOS user only, so it needs no administrator password. It
 refuses to install on a Mac of the other kind, or on a macOS version older than the
-companion and its runtime were built for (macOS 13.5 with Node.js 26). It has no payload
-of its own: its postinstall script has the companion that the package carries install
-itself, so macOS keeps no package receipt, and `pkgutil --pkgs` does not list it. The
-companion installs:
+companion was built for (macOS 13.5 with Node.js 26). It has no payload of its own: its
+postinstall script has the companion that the package carries install itself, so macOS
+keeps no package receipt, and `pkgutil --pkgs` does not list it. The companion installs:
 
-- `~/Library/Application Support/prompt-harbor/companion/`: the companion, about 250 MB.
+- `~/Library/Application Support/prompt-harbor/companion/`: the companion, about 140 MB.
   - `prompt-harbor-companion` is a Node.js
     [single executable application](https://nodejs.org/api/single-executable-applications.html)
-    holding Node.js 26 and the bundled companion code, signed ad hoc.
-  - `copilot-runtime/` is the Copilot SDK's runtime package for this architecture
-    (`@github/copilot-sdk-darwin-arm64` or `-darwin-x64`), copied unchanged, so its
-    binaries keep GitHub's signatures.
+    holding Node.js 26 and the bundled companion code, signed ad hoc. Nearly all of the
+    140 MB is the Node.js binary.
   - `uninstall` removes the companion, as described [below](#uninstall).
   - `LICENSE.txt` is this project's license. `THIRD-PARTY-NOTICES.txt` gives the license
-    of Node.js, of the packages bundled into the executable and of the runtime package.
-    The runtime package declares the MIT license but includes no license text. Its
-    runtime is not the same binary as the Copilot CLI, whose license limits
-    redistribution, so confirm the terms for redistributing it before publishing a
-    package.
+    of Node.js and of the packages bundled into the executable. Node.js is MIT-licensed
+    and explicitly allows redistribution, and its `LICENSE`, which also covers the
+    libraries built into the binary, is included in full.
+- `~/Library/Application Support/prompt-harbor/config.json`: where the installer found the
+  GitHub Copilot CLI, so the companion need not search for it on every start. The
+  companion only reads it, and searches again by itself when the recorded path has gone.
+  Delete the file to have the next install look again.
 - `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.mahata.prompt_harbor.json`:
   registers `prompt-harbor-companion` with Chrome for this extension only. It takes the
   extension ID from `src/protocol/identity.ts`, which the companion checks too and a test
   ties to the manifest's `key`.
 
-The installed copy does not use the package, this checkout, Node.js or pnpm, so deleting
-them does not break it.
+The companion also creates `~/Library/Caches/prompt-harbor/copilot-cli/`, the only thing it
+writes while it runs. The GitHub Copilot CLI unpacks its runtime into whatever `HOME` it is
+given, about 138 MB, so the companion gives it this directory: without a stable one it would
+do that again on every connection. Uninstalling removes it, and deleting it yourself only
+costs one slower connection.
+
+The package carries no GitHub Copilot software, so there is nothing of GitHub's to
+redistribute. It drives the Copilot CLI you installed.
+
+The installed copy does not use the package, this checkout, a separate Node.js or pnpm, so
+deleting them does not break it. It does need the GitHub Copilot CLI to stay installed.
 
 ### Update
 
@@ -153,7 +188,8 @@ Run the uninstall script in Terminal:
 "$HOME/Library/Application Support/prompt-harbor/companion/uninstall"
 ```
 
-It removes the companion and its Chrome host manifest. If your login keychain holds a
+It removes the companion, its recorded Copilot CLI path, its Copilot CLI cache and its
+Chrome host manifest. If your login keychain holds a
 saved PAT, it first asks whether to delete that too, and keeps it unless you answer `y`.
 It keeps it without asking when it cannot ask, such as when no terminal is attached, and
 `--keep-saved-pat` or `--delete-saved-pat` decides without asking. When it keeps a saved
@@ -170,7 +206,8 @@ security delete-generic-password -s io.github.mahata.prompt_harbor -a fine-grain
 
 `pnpm companion:install` builds the companion and installs it the same way, without a
 package. `pnpm companion:uninstall` uninstalls it like the uninstall script, with the
-same question and options, such as `pnpm companion:uninstall --delete-saved-pat`.
+same question and options, such as `pnpm companion:uninstall --delete-saved-pat`. Both
+also remove `config.json`, which records where the GitHub Copilot CLI was found.
 
 Older development builds used different install and Keychain identifiers. Prompt Harbor
 does not migrate or remove those entries.
@@ -270,14 +307,22 @@ If something fails:
 - **No enabled models:** the panel offers only models whose SDK metadata says
   `policy.state: "enabled"`, and it does not guess when that field is missing. Record the
   result and stop, because the filter may need revisiting.
-- **`sdk_start_failed`:** the companion could not start the Copilot runtime installed
-  beside it. Install the package again to replace a damaged or incomplete install. If it
-  still fails, record the result and stop.
+- **`runtime_not_found`:** the companion found no GitHub Copilot CLI. Install it, then
+  choose **Try again**, which restarts the companion so it looks again.
+- **`runtime_unsupported`:** the Copilot CLI it found is older than the version the SDK was
+  built against, or does not answer `--version` like the Copilot CLI. Run `copilot update`,
+  then choose **Try again**.
+- **`sdk_start_failed`:** the companion found a Copilot CLI but could not start it. This is
+  also what a Copilot CLI too new for this SDK would look like. Record the CLI's version
+  with `copilot --version` and stop.
 - **`keychain_read_failed`, `save_failed` or `forget_failed`:** `/usr/bin/security` could
   not read, save or delete the saved PAT. The error says what still works. Record the
   result, and delete any leftover item in Keychain Access.
 - **`companion_*` codes:** the panel names the fix. Most need the package installed again,
   followed by **Try again**.
+- **`missing` or `unsupported` before you paste a PAT:** the companion reports what it
+  found when it started, so the panel explains a missing or unusable Copilot CLI without
+  taking a PAT it could not use. **Sign out** still works, so a saved PAT can be deleted.
 
 Stop when GitHub denies access. Do not work around a denial with a stored login, a `gh`
 token, a classic PAT, a borrowed OAuth app ID, editor impersonation or a custom
@@ -312,8 +357,8 @@ The extension:
 The companion:
 
 - Runs as a Node.js single executable application that ignores `NODE_OPTIONS`, so the
-  environment Chrome starts it with cannot load other code into it. It starts the Copilot
-  runtime installed beside it, never one found elsewhere.
+  environment Chrome starts it with cannot load other code into it. It starts the GitHub
+  Copilot CLI it located, and nothing else.
 - Talks to Chrome only when its first argument is this extension's origin, which Chrome
   passes when this extension starts it. Chrome's host manifest also allows only this
   extension ID. Given `--install <home folder>`, as the package's postinstall script does,
@@ -338,6 +383,17 @@ The companion:
   - It runs `/usr/bin/security` with only `HOME` and a system `PATH`, and stops it after
     10 seconds. The PAT goes in on standard input rather than as an argument, the tool's
     error output is discarded, and the PAT is never logged.
+- Looks for the GitHub Copilot CLI as it starts, and tells the panel in its greeting whether
+  it is `ready`, `missing` or `unsupported`, with the version it read. It prefers the path
+  `config.json` records, checks that it still exists, and otherwise searches `PATH` and the
+  usual install directories. `COPILOT_CLI_PATH` pins one instead, and is authoritative: if
+  the path it names is not there, the companion reports `missing` rather than quietly
+  running a different Copilot CLI. A `missing` result is looked up again when you connect,
+  so installing the CLI and choosing **Try again** is enough.
+- Runs `copilot --version` with only a system `PATH` to read the version, stopping it after
+  10 seconds, and refuses anything older than the version the SDK was built against
+  (1.0.85). A newer Copilot CLI is accepted, because the CLI updates itself on its own
+  schedule; if one ever breaks the SDK's protocol, that surfaces as `sdk_start_failed`.
 - Configures the SDK:
   - `mode: "empty"` and `useLoggedInUser: false`, which stop the runtime from using stored
     OAuth tokens or `gh` CLI authentication and turn off the SDK's other ambient features.
@@ -348,10 +404,12 @@ The companion:
     starts a fresh one. Infinite sessions are off, which turns off the SDK's background
     compaction and session workspace, so an overlong conversation can fail with
     `context_limit`. Sub-agent events are ignored.
-- Gives the runtime a new private temporary directory as its `HOME`, `TMPDIR`, Copilot home
-  (`COPILOT_HOME`) and working directory, instead of your `~/.copilot` configuration. The
-  rest of its environment is a system `PATH` and the variables the SDK adds, so tokens such
-  as `GH_TOKEN` are not passed on. Neither are proxy and custom CA settings such as
+- Gives the Copilot CLI a new private temporary directory as its `TMPDIR`, Copilot home
+  (`COPILOT_HOME`) and working directory, instead of your `~/.copilot` configuration, and
+  `~/Library/Caches/prompt-harbor/copilot-cli/` as its `HOME`, so it unpacks its runtime
+  once rather than on every connection and still never reads your own home folder. The rest
+  of its environment is a system `PATH` and the variables the SDK adds, so tokens such as
+  `GH_TOKEN` are not passed on. Neither are proxy and custom CA settings such as
   `HTTPS_PROXY` or `NODE_EXTRA_CA_CERTS`, so networks that require them will not work.
 - Puts an attached page ahead of your prompt, between markers, with an instruction to treat
   it as data rather than instructions.
@@ -412,9 +470,18 @@ Accepted risks:
 - The SDK is young (1.0.x), so its options, defaults and events may change, including the
   ones this lockdown relies on. `pnpm install --frozen-lockfile` installs the exact version
   pinned in `pnpm-lock.yaml`, `pnpm list @github/copilot-sdk` names it, and the companion
-  build carries that version and its runtime. After updating the SDK, review
-  `src/companion/sdk-gateway.ts`, then run `pnpm check`, install a new package and repeat
+  build carries that version. After updating the SDK, review
+  `src/companion/sdk-gateway.ts` and the minimum Copilot CLI version in
+  `src/protocol/messages.ts`, then run `pnpm check`, install a new package and repeat
   the live check.
+- The Copilot CLI is no longer pinned by this project: it is whatever is installed on your
+  Mac, and it updates itself. The companion checks it is not older than the version the SDK
+  was built against, but cannot check one that is newer. A CLI that outruns the SDK will
+  fail at `sdk_start_failed` rather than being caught up front.
+- `COPILOT_CLI_PATH` makes the companion start whatever executable it names. Anyone who can
+  set it in Chrome's environment, or write `config.json`, chooses the program the companion
+  runs. Both need access to your macOS user account, which can already run that program
+  directly.
 
 GitHub receives the PAT, your prompts, any pages you include and the conversation so far with the SDK's system
 instructions, the chosen model, and whatever request metadata and telemetry the official
@@ -432,19 +499,23 @@ pnpm check
 
 `pnpm check` runs the unit tests, the companion tests, strict TypeScript checking, a
 production build and the browser tests. It needs macOS, because the companion builds only
-there, for the Mac that builds it. `pnpm test:companion` builds the companion into
-`dist-companion/` and checks that build and a package made from it:
+there, for the Mac that builds it. `pnpm test:companion` also needs the GitHub Copilot CLI
+installed, because the companion drives it rather than a runtime of its own; the tests say
+so and stop if it is missing. It builds the companion into `dist-companion/` and checks
+that build and a package made from it:
 
 - It is a signed executable for this Mac's architecture that refuses to start unless Chrome
   starts it for the extension, and ignores `NODE_OPTIONS`.
-- It greets Chrome with the SDK version it was built with, in an environment with no
-  `PATH`, so without Node.js.
-- It carries the Copilot runtime for its architecture, still signed by GitHub, its
-  uninstall script, this project's license and the third-party notices.
-- A copy of it elsewhere connects through its own bundled SDK and runtime. The check sends
-  a fake PAT from inside a `sandbox-exec` sandbox that denies network connections, so the
-  PAT never leaves the Mac, and expects `auth_failed` with the runtime's temporary
-  directory already removed. It first checks that the sandbox really blocks a connection.
+- It greets Chrome with the SDK version it was built with and the Copilot CLI it found, in
+  an environment with no `PATH`, so without a separate Node.js, and leaves nothing in the
+  home folder it was given.
+- It carries its uninstall script, this project's license and the third-party notices, and
+  no Copilot runtime package.
+- A copy of it elsewhere connects through its own bundled SDK and the Copilot CLI on this
+  Mac. The check sends a fake PAT from inside a `sandbox-exec` sandbox that denies network
+  connections, so the PAT never leaves the Mac, and expects `auth_failed` with the
+  runtime's temporary directory already removed. It first checks that the sandbox really
+  blocks a connection.
 - It installs itself into a temporary home folder and uninstalls through its uninstall
   script there. The installer command does the same with a copy.
 - The package installs only for the current user and carries the build unchanged.
@@ -461,7 +532,8 @@ The browser tests:
 - Use the real installer to register a scripted fake companion in a throwaway Chromium
   profile.
 - Load the built extension and drive every panel state, including the first-run PAT
-  prompt, a missing companion, rejected tokens, no models, saving, reusing, replacing and
+  prompt, a missing companion, a missing or too-old Copilot CLI, rejected tokens, no
+  models, saving, reusing, replacing and
   unreadable saved PATs, signing out, multi-turn chat, model switches, New chat, including
   a page (with Chrome's scripting stubbed, because a test cannot click the toolbar icon to
   grant `activeTab`) and refusing to when access is missing, keyboard
@@ -484,9 +556,10 @@ type-checked build run in parallel. The E2E job then tests the exact `chrome-ext
 artifact uploaded by the build, which you can also download from the run and load unpacked
 in place of `dist/`. The companion still comes from a package or `pnpm companion:install`
 built from the same commit. Playwright output, including layout screenshots, is uploaded as
-`playwright-test-results` even when tests fail. The companion jobs run
-`pnpm test:companion` natively on `macos-latest` (Apple silicon) and `macos-15-intel`
-(Intel), then package each build and upload the package as `companion-darwin-arm64` or
+`playwright-test-results` even when tests fail. The companion jobs install the GitHub
+Copilot CLI with Homebrew and run `pnpm test:companion` natively on `macos-latest` (Apple
+silicon) and `macos-15-intel` (Intel), then package each build and upload the package as
+`companion-darwin-arm64` or
 `companion-darwin-x64`. Those packages are not signed or notarized, and the companion in
 them is signed ad hoc, so they are for testing only. CI uses no secrets and has read-only
 repository access.
@@ -495,8 +568,8 @@ The code is organized as:
 
 - `src/sidepanel/`: the chat panel UI, its native messaging bridge and page capture.
 - `src/companion/`: the companion's entry point, protocol state machine, SDK gateway,
-  Keychain store, frame codec, page prompt, build, license notices, install layout,
-  installer and installer package.
+  Keychain store, frame codec, page prompt, Copilot CLI lookup, version check, recorded
+  configuration, build, license notices, install layout, installer and installer package.
 - `src/protocol/`: the messages and extension identity shared by both sides.
 
 ## Evidence
@@ -507,6 +580,22 @@ The code is organized as:
   the PAT must be owned by your personal account and have the Copilot Requests permission.
 - [SDK multi-tenancy](https://github.com/github/copilot-sdk/blob/main/docs/setup/multi-tenancy.md):
   `mode: "empty"` and the default integration ID.
+- The SDK's own `CopilotClient` documentation gives
+  `RuntimeConnection.forStdio({ path: "/usr/local/bin/copilot" })` as the way to use a
+  Copilot CLI of your own, and the SDK starts whatever it is given with the CLI's
+  `--headless --no-auto-update --stdio` flags, saying "Path to Copilot CLI is required"
+  when it has none. Checked against `@github/copilot-sdk` 1.0.14 in
+  `node_modules/@github/copilot-sdk/dist/client.js`.
+- Checked here: the SDK drives an installed Copilot CLI. Against
+  `/opt/homebrew/bin/copilot` 1.0.89-3, `start()` succeeded, `getAuthStatus()` returned
+  `{"isAuthenticated":false,...}` for a deliberately invalid PAT, and `listModels()` failed
+  only on that PAT. The SDK records 1.0.85 as the CLI version it was built against in
+  `dist/cliVersion.js`, so a newer CLI works; it does not export that constant, which is
+  why `MINIMUM_COPILOT_CLI_VERSION` is kept in `src/protocol/messages.ts`.
+- Node.js is MIT-licensed and its `LICENSE`, which also covers the libraries built into the
+  binary, grants the right to distribute. That is what makes shipping it inside the
+  companion executable allowed, and the build includes that file in
+  `THIRD-PARTY-NOTICES.txt`.
 - [SDK streaming events](https://github.com/github/copilot-sdk/blob/main/docs/features/streaming-events.md)
   and [usage and billing](https://github.com/github/copilot-sdk/blob/main/docs/features/usage-and-billing.md):
   `assistant.message_delta`, `session.idle` and the `assistant.usage` multiplier.

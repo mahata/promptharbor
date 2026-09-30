@@ -6,7 +6,9 @@ import { createInterface } from "node:readline/promises";
 import type { Readable, Writable } from "node:stream";
 import type { CredentialStore } from "./keychain.ts";
 import { DELETE_SAVED_TOKEN_COMMAND } from "./keychain.ts";
-import { COMPANION_EXECUTABLE_NAME } from "./layout.ts";
+import { companionConfigPath, writeCompanionConfig } from "./config.ts";
+import { discoverCopilotCli } from "./locate.ts";
+import { COMPANION_EXECUTABLE_NAME, copilotCliCacheDirectory } from "./layout.ts";
 import { EXTENSION_ORIGIN, HOST_NAME } from "../protocol/identity.ts";
 
 const SUPPORTED_PLATFORM = "darwin";
@@ -25,6 +27,7 @@ const FAILURE = 1;
 export type SavedPatChoice = "ask" | "keep" | "delete";
 export type Confirm = (question: string) => Promise<boolean>;
 export type InstallerOutput = { log: (line: string) => void; error: (line: string) => void };
+export type DiscoverCli = (home: string) => Promise<string | undefined>;
 
 export type UninstallOptions = {
   store: Pick<CredentialStore, "hasSavedToken" | "forgetToken">;
@@ -38,6 +41,7 @@ export type InstallerOptions = UninstallOptions & {
   platform: NodeJS.Platform;
   home: string;
   buildDirectory: string;
+  discoverCli?: DiscoverCli;
 };
 
 type SavedPatDecision = "delete" | "keep" | "none" | "unknown";
@@ -51,12 +55,14 @@ export function companionInstallPaths(home: string) {
   return {
     applicationDirectory,
     companionDirectory,
+    configPath: companionConfigPath(applicationDirectory),
+    cacheDirectory: copilotCliCacheDirectory(home),
     executablePath: join(companionDirectory, COMPANION_EXECUTABLE_NAME),
     hostManifestPath: join(applicationSupport, "Google", "Chrome", "NativeMessagingHosts", `${HOST_NAME}.json`),
   };
 }
 
-export async function runInstaller({ args, platform, home, buildDirectory, ...uninstallOptions }: InstallerOptions) {
+export async function runInstaller({ args, platform, home, buildDirectory, discoverCli, ...uninstallOptions }: InstallerOptions) {
   const { output } = uninstallOptions;
   if (platform !== SUPPORTED_PLATFORM) {
     output.error("The companion installer supports macOS only.");
@@ -68,7 +74,7 @@ export async function runInstaller({ args, platform, home, buildDirectory, ...un
       output.error("Run pnpm companion:install, which builds it first.");
       return FAILURE;
     }
-    reportInstallation(await installCompanion(home, buildDirectory), output);
+    reportInstallation(await installCompanion(home, buildDirectory, discoverCli), output);
     output.log("It runs without this checkout or Node.js. Run pnpm companion:install again to update it.");
     return SUCCESS;
   }
@@ -94,7 +100,7 @@ export function reportInstallation({ executablePath, hostManifestPath }: Compani
   output.log("Reopen the extension's side panel to use it.");
 }
 
-export async function installCompanion(home: string, buildDirectory: string) {
+export async function installCompanion(home: string, buildDirectory: string, discoverCli: DiscoverCli = defaultDiscoverCli) {
   const paths = companionInstallPaths(home);
   const { applicationDirectory, companionDirectory, executablePath, hostManifestPath } = paths;
   const hostManifestDirectory = dirname(hostManifestPath);
@@ -127,7 +133,19 @@ export async function installCompanion(home: string, buildDirectory: string) {
     if (!installed) await rmdir(applicationDirectory).catch(() => undefined);
   }
   await removeLeftovers(applicationDirectory, LEFTOVER_PREFIXES);
+  await recordCopilotCli(paths, home, discoverCli);
   return paths;
+}
+
+const defaultDiscoverCli: DiscoverCli = (home) => discoverCopilotCli({ home });
+
+// Looking for the Copilot CLI now saves the companion a search on every start. Chrome starts it
+// with a bare PATH, so a path found here from a full shell environment is worth keeping. Failing
+// to find one is not an install failure: the companion looks again, and the panel explains it.
+async function recordCopilotCli({ configPath }: CompanionInstallPaths, home: string, discoverCli: DiscoverCli) {
+  const copilotCliPath = await discoverCli(home).catch(() => undefined);
+  if (copilotCliPath !== undefined) await writeCompanionConfig(configPath, { copilotCliPath });
+  return copilotCliPath;
 }
 
 // The PAT question comes before anything is removed, so interrupting it leaves the companion installed.
@@ -224,10 +242,14 @@ async function recoverFromInterruptedInstall(applicationDirectory: string, compa
   await removeLeftovers(applicationDirectory, (await pathExists(companionDirectory)) ? LEFTOVER_PREFIXES : [STAGING_PREFIX]);
 }
 
-async function uninstall({ applicationDirectory, companionDirectory, hostManifestPath }: CompanionInstallPaths) {
+async function uninstall({ applicationDirectory, cacheDirectory, companionDirectory, configPath, hostManifestPath }: CompanionInstallPaths) {
   await rm(hostManifestPath, { force: true });
   await removeLeftovers(dirname(hostManifestPath), [HOST_MANIFEST_COPY_PREFIX]);
   await rm(companionDirectory, { recursive: true, force: true });
+  await rm(configPath, { force: true });
+  // The Copilot CLI runtime the companion had it unpack here is worth about 138 MB.
+  await rm(cacheDirectory, { recursive: true, force: true });
+  await rmdir(dirname(cacheDirectory)).catch(() => undefined);
   await removeLeftovers(applicationDirectory, LEFTOVER_PREFIXES);
   await rmdir(applicationDirectory).catch(() => undefined);
 }

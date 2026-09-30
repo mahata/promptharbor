@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { companionBuildDirectory, runBuilder, UNINSTALL_SCRIPT } from "../../src/companion/build.ts";
-import { bundledRuntimePath, COMPANION_EXECUTABLE_NAME, UNINSTALL_SCRIPT_NAME } from "../../src/companion/layout.ts";
+import { COMPANION_EXECUTABLE_NAME, UNINSTALL_SCRIPT_NAME } from "../../src/companion/layout.ts";
 
 const buildCliPath = fileURLToPath(new URL("../../src/companion/build-cli.ts", import.meta.url));
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -25,10 +25,6 @@ describe("companion layout", () => {
   it("keeps each architecture's build apart in dist-companion", () => {
     expect(companionBuildDirectory("arm64")).toBe(join(repositoryRoot, "dist-companion", "darwin-arm64"));
     expect(companionBuildDirectory("x64")).toBe(join(repositoryRoot, "dist-companion", "darwin-x64"));
-  });
-
-  it("finds the Copilot runtime for the companion's own architecture beside it", () => {
-    expect(bundledRuntimePath("/Companion", "x64")).toBe("/Companion/copilot-runtime/prebuilds/darwin-x64/copilot-runtime");
   });
 });
 

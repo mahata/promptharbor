@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CopilotClient, CopilotSession, ModelInfo, SessionEvent } from "@github/copilot-sdk";
@@ -21,9 +21,9 @@ const TURN_FAILURE_BY_ERROR_TYPE = new Map<string, TurnFailureCode>([
 
 type Conversation = { session: CopilotSession; model: string };
 
-export type SdkGatewayOptions = { runtimePath?: string };
+export type SdkGatewayOptions = { runtimePath: string; cacheDirectory: string };
 
-export function createSdkGateway({ runtimePath }: SdkGatewayOptions = {}): CopilotGateway {
+export function createSdkGateway({ runtimePath, cacheDirectory }: SdkGatewayOptions): CopilotGateway {
   let closed = false;
   let client: CopilotClient | undefined;
   let privateHome: string | undefined;
@@ -74,10 +74,14 @@ export function createSdkGateway({ runtimePath }: SdkGatewayOptions = {}): Copil
         throw new GatewayFailure("sdk_start_failed");
       }
       privateHome = home;
-      const env = { HOME: home, TMPDIR: home, COPILOT_HOME: home, PATH: SYSTEM_PATH };
+      // HOME is the companion's cache directory so the Copilot CLI unpacks its runtime once and
+      // reuses it, while its Copilot home, temporary directory and working directory stay this
+      // throwaway one, keeping it away from the user's own ~/.copilot configuration.
+      await mkdir(cacheDirectory, { recursive: true }).catch(() => undefined);
+      const env = { HOME: cacheDirectory, TMPDIR: home, COPILOT_HOME: home, PATH: SYSTEM_PATH };
       const startingClient = new CopilotClient({
         mode: "empty",
-        connection: RuntimeConnection.forStdio(runtimePath === undefined ? { env } : { path: runtimePath, env }),
+        connection: RuntimeConnection.forStdio({ path: runtimePath, env }),
         baseDirectory: home,
         workingDirectory: home,
         gitHubToken: token,

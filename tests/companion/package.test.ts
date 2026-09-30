@@ -8,6 +8,7 @@ import { companionBuildDirectory } from "../../src/companion/build.ts";
 import { createFrameDecoder } from "../../src/companion/framing.ts";
 import { companionInstallPaths } from "../../src/companion/install.ts";
 import { COMPANION_EXECUTABLE_NAME, UNINSTALL_SCRIPT_NAME } from "../../src/companion/layout.ts";
+import { CONFIG_FILE_NAME } from "../../src/companion/config.ts";
 import { buildCompanionPackage, POSTINSTALL_SCRIPT, runPackager } from "../../src/companion/package.ts";
 import { EXTENSION_ORIGIN } from "../../src/protocol/identity.ts";
 
@@ -156,7 +157,8 @@ describe("companion package", { timeout: 60_000 }, () => {
     expect(listFiles(companionDirectory)).toEqual(listFiles(buildDirectory));
     expect(codesignVerifies(executablePath)).toBe(true);
     await expectGreeting(executablePath, home);
-    expect(readdirSync(join(home, "Library"))).toEqual(["Application Support"]);
+    // Caches holds the Copilot CLI runtime the greeting had it unpack; nothing else is added.
+    expect(readdirSync(join(home, "Library")).sort()).toEqual(["Application Support", "Caches"]);
   });
 
   it("replaces an earlier install completely", async () => {
@@ -184,7 +186,11 @@ describe("companion package", { timeout: 60_000 }, () => {
     } finally {
       chmodSync(applicationDirectory, 0o755);
     }
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    // config.json is there only when this Mac has a Copilot CLI to record, so what matters is
+    // that no staging or moved-aside copy was left behind.
+    expect(readdirSync(applicationDirectory).sort()).toEqual(
+      ["companion", CONFIG_FILE_NAME].filter((entry) => existsSync(join(applicationDirectory, entry))).sort(),
+    );
     expect(existsSync(join(companionDirectory, "left-by-earlier-install"))).toBe(true);
     await expectGreeting(executablePath, home);
   });

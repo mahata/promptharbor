@@ -1,5 +1,6 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GatewayFailure } from "../../src/companion/gateway.ts";
 import type { CopilotGateway, Turn, TurnEvent } from "../../src/companion/gateway.ts";
@@ -80,6 +81,8 @@ vi.mock("@github/copilot-sdk", () => ({
 }));
 
 const token = `github_pat_${"Q".repeat(82)}`;
+const COPILOT_CLI_PATH = "/opt/homebrew/bin/copilot";
+let cacheDirectory: string;
 const idle = { type: "session.idle", data: {} };
 
 type FakeSession = InstanceType<typeof sdk.FakeSession>;
@@ -98,7 +101,7 @@ function homeOf(client: InstanceType<typeof sdk.FakeCopilotClient>) {
 }
 
 async function connectedGateway() {
-  const gateway = createSdkGateway();
+  const gateway = createSdkGateway({ runtimePath: COPILOT_CLI_PATH, cacheDirectory });
   await gateway.connect(token);
   return { gateway, client: onlyClient() };
 }
@@ -136,24 +139,31 @@ beforeEach(() => {
   sdk.script.authStatus = async () => ({ isAuthenticated: true, login: "octocat" });
   sdk.script.models = async () => [];
   sdk.script.stop = async () => [];
+  cacheDirectory = join(mkdtempSync(join(tmpdir(), "gateway-cache-")), "copilot-cli");
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+  rmSync(dirname(cacheDirectory), { recursive: true, force: true });
 });
 
 describe("connect", () => {
   it("starts an empty-mode runtime with only the panel's token and a private temporary home", async () => {
     vi.stubEnv("GH_TOKEN", "gho_ambient");
     vi.stubEnv("GITHUB_TOKEN", "ghp_ambient");
+    // The SDK reads this too, so the gateway has to name the Copilot CLI it was given instead.
     vi.stubEnv("COPILOT_CLI_PATH", "/tmp/other-runtime");
     const { gateway, client } = await connectedGateway();
     const home = homeOf(client);
 
     expect(client.options).toEqual({
       mode: "empty",
-      connection: { kind: "stdio", env: { HOME: home, TMPDIR: home, COPILOT_HOME: home, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" } },
+      connection: {
+        kind: "stdio",
+        path: COPILOT_CLI_PATH,
+        env: { HOME: cacheDirectory, TMPDIR: home, COPILOT_HOME: home, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
+      },
       baseDirectory: home,
       workingDirectory: home,
       gitHubToken: token,
@@ -167,9 +177,9 @@ describe("connect", () => {
     await gateway.close();
   });
 
-  it("starts the runtime it is given instead of looking for one in node_modules", async () => {
-    const runtimePath = "/Companion/copilot-runtime/prebuilds/darwin-arm64/copilot-runtime";
-    const gateway = createSdkGateway({ runtimePath });
+  it("starts the Copilot CLI it is given rather than a runtime of its own", async () => {
+    const runtimePath = "/usr/local/bin/copilot";
+    const gateway = createSdkGateway({ runtimePath, cacheDirectory });
     await gateway.connect(token);
     const client = onlyClient();
     const home = homeOf(client);
@@ -177,7 +187,7 @@ describe("connect", () => {
     expect(client.options.connection).toEqual({
       kind: "stdio",
       path: runtimePath,
-      env: { HOME: home, TMPDIR: home, COPILOT_HOME: home, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
+      env: { HOME: cacheDirectory, TMPDIR: home, COPILOT_HOME: home, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
     });
     await gateway.close();
   });
@@ -192,7 +202,7 @@ describe("connect", () => {
       { id: "", name: "Nameless id", policy: { state: "enabled", terms: "" } },
       { id: "odd-billing", name: "Odd billing", policy: { state: "enabled", terms: "" }, billing: { multiplier: -1 } },
     ];
-    const gateway = createSdkGateway();
+    const gateway = createSdkGateway({ runtimePath: COPILOT_CLI_PATH, cacheDirectory });
     await expect(gateway.connect(token)).resolves.toEqual({
       login: "octocat",
       models: [
@@ -212,7 +222,7 @@ describe("connect", () => {
         name: `Model ${index}`,
         policy: { state: "enabled", terms: "" },
       }));
-    const gateway = createSdkGateway();
+    const gateway = createSdkGateway({ runtimePath: COPILOT_CLI_PATH, cacheDirectory });
     const account = await gateway.connect(token);
     expect(account.login).toBeUndefined();
     expect(account.models).toHaveLength(MAX_MODELS);
@@ -226,7 +236,7 @@ describe("connect", () => {
     ["models cannot be listed", { models: async () => Promise.reject(new Error("403 Forbidden: {body}")) }, "models_unavailable"],
   ] as const)("reports a coded failure when %s", async (_description, override, code) => {
     Object.assign(sdk.script, override);
-    const gateway = createSdkGateway();
+    const gateway = createSdkGateway({ runtimePath: COPILOT_CLI_PATH, cacheDirectory });
     const failure = await gateway.connect(token).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(GatewayFailure);
     expect(failure).toMatchObject({ code, message: code });
@@ -234,7 +244,7 @@ describe("connect", () => {
   });
 
   it("does not start a runtime when closed before the SDK is ready", async () => {
-    const gateway = createSdkGateway();
+    const gateway = createSdkGateway({ runtimePath: COPILOT_CLI_PATH, cacheDirectory });
     const connecting = gateway.connect(token);
     await gateway.close();
     await expect(connecting).rejects.toBeInstanceOf(GatewayFailure);
@@ -244,7 +254,7 @@ describe("connect", () => {
   it("stops a runtime that was closed while starting", async () => {
     let finishStart = () => {};
     sdk.script.start = () => new Promise<void>((resolve) => (finishStart = resolve));
-    const gateway = createSdkGateway();
+    const gateway = createSdkGateway({ runtimePath: COPILOT_CLI_PATH, cacheDirectory });
     const connecting = gateway.connect(token);
     await vi.waitFor(() => expect(sdk.FakeCopilotClient.instances[0]?.start).toHaveBeenCalled());
     const client = onlyClient();
@@ -378,7 +388,7 @@ describe("startTurn", () => {
   });
 
   it("refuses to start a turn before connecting", async () => {
-    const gateway = createSdkGateway();
+    const gateway = createSdkGateway({ runtimePath: COPILOT_CLI_PATH, cacheDirectory });
     const turn = gateway.startTurn({ model: "gpt-5-mini", prompt: "Say hi", onEvent: () => {} });
     await expect(turn.outcome).rejects.toMatchObject({ code: "send_failed" });
   });

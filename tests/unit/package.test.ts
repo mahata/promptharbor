@@ -7,7 +7,7 @@ import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { companionInstallPaths } from "../../src/companion/install.ts";
 import { COMPANION_EXECUTABLE_NAME, LICENSE_FILE_NAME, NOTICES_FILE_NAME, UNINSTALL_SCRIPT_NAME } from "../../src/companion/layout.ts";
-import { compareVersions } from "../../src/companion/macho.ts";
+import { compareVersions } from "../../src/companion/version.ts";
 import {
   companionPackageFileName,
   CONCLUSION_TEXT,

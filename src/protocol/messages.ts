@@ -1,7 +1,14 @@
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
-export const MAX_TOKEN_LENGTH = 255;
-export const MAX_FIELD_LENGTH = 200;
+// The companion drives the Copilot CLI the user installed, and the SDK does not re-export the CLI
+// version it was built against, so the floor is pinned here. Revisit it whenever
+// @github/copilot-sdk is updated: the SDK records its own target in dist/cliVersion.js. The panel
+// names it when the CLI it found is too old, so it lives beside the protocol rather than in the
+// companion, which the panel must never import.
+export const MINIMUM_COPILOT_CLI_VERSION = "1.0.85";
+
+
+export const MAX_TOKEN_LENGTH = 255;export const MAX_FIELD_LENGTH = 200;
 export const MAX_MODELS = 200;
 export const MAX_PROMPT_LENGTH = 32_768;
 export const MAX_OUTPUT_LENGTH = 65_536;
@@ -18,6 +25,8 @@ export const ERROR_CODES_BY_STAGE = {
     "already_connected",
     "no_saved_token",
     "keychain_read_failed",
+    "runtime_not_found",
+    "runtime_unsupported",
     "sdk_start_failed",
     "auth_failed",
     "models_unavailable",
@@ -42,10 +51,15 @@ export const ERROR_CODES_BY_STAGE = {
 
 const TURN_OUTCOMES = ["complete", "stopped"] as const;
 
+// What the companion found when it looked for the Copilot CLI it runs the SDK against. Reported in
+// the handshake so the panel can explain a missing CLI before a PAT is ever pasted.
+export const RUNTIME_STATES = ["ready", "missing", "unsupported"] as const;
+
 type ErrorCodesByStage = typeof ERROR_CODES_BY_STAGE;
 export type ErrorStage = keyof ErrorCodesByStage;
 export type ErrorCode<Stage extends ErrorStage> = ErrorCodesByStage[Stage][number];
 export type TurnOutcome = (typeof TURN_OUTCOMES)[number];
+export type RuntimeState = (typeof RUNTIME_STATES)[number];
 
 export type PageContext = { url: string; title: string; text: string; selection?: string; truncated: boolean };
 
@@ -64,7 +78,7 @@ export type CompanionErrorMessage = {
 }[ErrorStage];
 
 export type CompanionMessage =
-  | { type: "hello"; protocolVersion: number; sdkVersion: string; savedToken: boolean }
+  | { type: "hello"; protocolVersion: number; sdkVersion: string; savedToken: boolean; runtime: RuntimeState; runtimeVersion?: string }
   | { type: "connected"; login?: string; models: ModelSummary[] }
   | { type: "credential"; saved: boolean }
   | { type: "delta"; text: string }
@@ -109,12 +123,7 @@ export function parseCompanionMessage(value: unknown): CompanionMessage | undefi
   if (!isJsonObject(value)) return undefined;
   switch (value.type) {
     case "hello":
-      return hasExactlyKeys(value, ["type", "protocolVersion", "sdkVersion", "savedToken"]) &&
-        isInteger(value.protocolVersion) &&
-        isBoundedField(value.sdkVersion) &&
-        typeof value.savedToken === "boolean"
-        ? { type: "hello", protocolVersion: value.protocolVersion, sdkVersion: value.sdkVersion, savedToken: value.savedToken }
-        : undefined;
+      return parseHello(value);
     case "connected":
       return parseConnected(value);
     case "credential":
@@ -136,6 +145,16 @@ export function parseCompanionMessage(value: unknown): CompanionMessage | undefi
     default:
       return undefined;
   }
+}
+
+function parseHello(value: JsonObject): CompanionMessage | undefined {
+  if (!hasExactlyKeys(value, ["type", "protocolVersion", "sdkVersion", "savedToken", "runtime"], ["runtimeVersion"])) return undefined;
+  const { protocolVersion, sdkVersion, savedToken, runtime, runtimeVersion } = value;
+  if (!isInteger(protocolVersion) || !isBoundedField(sdkVersion) || typeof savedToken !== "boolean") return undefined;
+  if (!isOneOf(runtime, RUNTIME_STATES)) return undefined;
+  const hello = { type: "hello", protocolVersion, sdkVersion, savedToken, runtime } as const;
+  if (runtimeVersion === undefined) return hello;
+  return isBoundedField(runtimeVersion) ? { ...hello, runtimeVersion } : undefined;
 }
 
 function parseSend(value: JsonObject): PanelMessage | undefined {

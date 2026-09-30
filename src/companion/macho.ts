@@ -51,16 +51,6 @@ export function parseMachOSummary(image: Buffer, name = "The file"): MachOSummar
   throw new Error(`${name} does not declare a minimum macOS version.`);
 }
 
-export function compareVersions(first: string, second: string) {
-  const firstParts = first.split(".").map(Number);
-  const secondParts = second.split(".").map(Number);
-  for (let index = 0; index < Math.max(firstParts.length, secondParts.length); index += 1) {
-    const difference = (firstParts[index] ?? 0) - (secondParts[index] ?? 0);
-    if (difference !== 0) return Math.sign(difference);
-  }
-  return 0;
-}
-
 // Mach-O packs versions as xxxx.yy.zz in 16, 8 and 8 bits.
 function formatVersion(encoded: number) {
   const major = encoded >>> 16;

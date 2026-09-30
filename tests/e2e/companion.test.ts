@@ -35,18 +35,23 @@ type OpenPanel = {
   saveTokenOutsidePanel: (token: string) => void;
   releaseHeldKeychainTask: () => void;
   receivedPrompts: () => string[];
+  setCopilotCli: (state: CopilotCliState) => void;
 };
 
-type PanelSetup = { withCompanion?: boolean; savedToken?: string };
+type CopilotCliState = "ready" | "missing" | "unsupported";
+type PanelSetup = { withCompanion?: boolean; savedToken?: string; copilotCli?: CopilotCliState };
 
 let cleanUp: (() => Promise<void>) | undefined;
 
-async function openPanel({ withCompanion = true, savedToken }: PanelSetup = {}): Promise<OpenPanel> {
+async function openPanel({ withCompanion = true, savedToken, copilotCli }: PanelSetup = {}): Promise<OpenPanel> {
   const home = mkdtempSync(join(tmpdir(), "panel-e2e-home-"));
   const companionStateDirectory = join(home, "running-companions");
   mkdirSync(companionStateDirectory);
   const keychainPath = join(home, "fake-keychain");
   if (savedToken !== undefined) writeFileSync(keychainPath, savedToken);
+  const runtimeStatePath = join(companionStateDirectory, "runtime-state");
+  const setCopilotCli = (state: CopilotCliState) => writeFileSync(runtimeStatePath, state);
+  if (copilotCli !== undefined) setCopilotCli(copilotCli);
   const fakeBuildDirectory = join(home, "fake-companion-build");
   mkdirSync(fakeBuildDirectory);
   const fakeExecutablePath = join(fakeBuildDirectory, COMPANION_EXECUTABLE_NAME);
@@ -58,6 +63,8 @@ async function openPanel({ withCompanion = true, savedToken }: PanelSetup = {}):
       platform: "darwin",
       home,
       buildDirectory: fakeBuildDirectory,
+      // The panel is driven by the fake companion's reported state, not by this Mac's Copilot CLI.
+      discoverCli: async () => undefined,
       store: { hasSavedToken: async () => false, forgetToken: async () => false },
       output: { log: () => {}, error: () => {} },
     });
@@ -106,6 +113,7 @@ async function openPanel({ withCompanion = true, savedToken }: PanelSetup = {}):
     savedToken: () => (existsSync(keychainPath) ? readFileSync(keychainPath, "utf8") : undefined),
     saveTokenOutsidePanel: (token) => writeFileSync(keychainPath, token),
     releaseHeldKeychainTask: () => writeFileSync(`${keychainPath}.release`, ""),
+    setCopilotCli,
     receivedPrompts: () =>
       existsSync(`${keychainPath}.prompts`)
         ? readFileSync(`${keychainPath}.prompts`, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as string)
@@ -205,6 +213,36 @@ test("explains how to install a missing companion, then finds it after installat
   await expect(page.getByRole("alert")).toBeHidden();
   await expect(tryAgainButton).toBeHidden();
   expect(networkRequests).toEqual([]);
+});
+
+test("explains how to install a missing Copilot CLI, then connects once Try again finds it", async () => {
+  const { page, networkRequests, setCopilotCli } = await openPanel({ copilotCli: "missing" });
+  await expect(page.getByRole("alert")).toContainText("could not find the GitHub Copilot CLI");
+  await expect(page.getByRole("alert")).toContainText("brew install --cask copilot-cli");
+  await expect(page.getByRole("alert")).toContainText("(missing)");
+  await expect(patField(page)).toBeHidden();
+  const tryAgainButton = button(page, "Try again");
+  await expect(tryAgainButton).toBeFocused();
+
+  setCopilotCli("ready");
+  await tryAgainButton.click();
+  await expect(patField(page)).toBeFocused();
+  await expect(page.getByRole("alert")).toBeHidden();
+  await expect(tryAgainButton).toBeHidden();
+  expect(networkRequests).toEqual([]);
+});
+
+test("says so when the Copilot CLI on this Mac is too old, and still lets a saved PAT be deleted", async () => {
+  const { page, savedToken } = await openPanel({ copilotCli: "unsupported", savedToken: approvedToken });
+  await expect(page.getByRole("alert")).toContainText("GitHub Copilot CLI 1.0.1 is older than");
+  await expect(page.getByRole("alert")).toContainText("(unsupported)");
+  await expect(patField(page)).toBeHidden();
+  await expect(promptField(page)).toBeDisabled();
+  await expect(button(page, "Try again")).toBeFocused();
+
+  // A PAT saved before the Copilot CLI went stale must not be stranded in the keychain.
+  await button(page, "Sign out").click();
+  await expect.poll(savedToken).toBeUndefined();
 });
 
 test("connects with the saved PAT once Try again finds the companion", async () => {
