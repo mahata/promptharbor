@@ -22,7 +22,12 @@ const SANDBOX_EXEC_PATH = "/usr/bin/sandbox-exec";
 // Denies every network connection except to Unix domain sockets, so a fake PAT never leaves this Mac.
 const NO_NETWORK_PROFILE = "(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote unix-socket))";
 const fakeToken = `github_pat_${"Z".repeat(82)}`;
-const startupTimeout = { timeout: 10_000 };
+// A companion starting in a home folder it has not used before has the Copilot CLI unpack its
+// runtime there, about 138 MB, before it can report a version and greet Chrome. Every test here
+// gets its own home folder, so every one pays that cost, and on CI's Intel runners it has taken
+// over 15 seconds. The earlier 10 seconds was sized for a companion that only read the keychain,
+// and left these tests failing or passing on which side of the limit the unpack happened to land.
+const startupTimeout = { timeout: 45_000 };
 const connectTimeout = { timeout: 20_000 };
 const buildDirectory = companionBuildDirectory(process.arch);
 const builtExecutablePath = join(buildDirectory, COMPANION_EXECUTABLE_NAME);

@@ -510,7 +510,9 @@ pnpm check
 production build and the browser tests. It needs macOS, because the companion builds only
 there, for the Mac that builds it. `pnpm test:companion` also needs the GitHub Copilot CLI
 installed, because the companion drives it rather than a runtime of its own; the tests say
-so and stop if it is missing. It builds the companion into `dist-companion/` and checks
+so and stop if it is missing. Each test gives the companion its own home folder, so each one
+has the Copilot CLI unpack its runtime again, which is most of why the suite takes minutes.
+It builds the companion into `dist-companion/` and checks
 that build and a package made from it:
 
 - It is a signed executable for this Mac's architecture that refuses to start unless Chrome
