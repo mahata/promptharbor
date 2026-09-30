@@ -40,12 +40,26 @@ describe("parseCopilotCliVersion", () => {
     expect(parseCopilotCliVersion("GitHub Copilot CLI 1.0.85.\n")).toBe("1.0.85");
   });
 
+  it("reads a version printed with CRLF line endings", () => {
+    expect(parseCopilotCliVersion("GitHub Copilot CLI 1.0.89-3.\r\nRun 'copilot update' to check for updates.\r\n")).toBe("1.0.89-3");
+  });
+
   it.each([["", "no output"], ["bash: copilot: command not found\n", "a shell error"], ["git version 2.51.0\n", "another tool"]])(
     "returns nothing for %j, which is %s",
     (output) => {
       expect(parseCopilotCliVersion(output)).toBeUndefined();
     },
   );
+
+  // The companion hands this executable the user's PAT, so merely mentioning the Copilot CLI must
+  // not be enough to pass as one. The banner has to be the whole line.
+  it.each([
+    ["Not GitHub Copilot CLI 1.2\n", "a denial that names it"],
+    ["evil-tool: GitHub Copilot CLI 9.9.9\n", "a prefixed line"],
+    ["GitHub Copilot CLI 1.0.89 and then some\n", "a line that continues past the version"],
+  ])("refuses %j, which is %s", (output) => {
+    expect(parseCopilotCliVersion(output)).toBeUndefined();
+  });
 });
 
 

@@ -219,6 +219,36 @@ describe("locating the Copilot CLI on connect", () => {
     expect(emitted).toHaveLength(1);
   });
 
+  // A late answer must not be remembered either. Recording it would let the next connection skip
+  // the lookup and start a Copilot CLI that a newer lookup had already found to be gone.
+  it("does not remember what a lookup that outlasted its connection found", async () => {
+    const lookups = [deferred<RuntimeStatus>(), deferred<RuntimeStatus>()];
+    let started = 0;
+    const { service, gateways, emitted } = startService({
+      runtime: MISSING_RUNTIME,
+      resolveRuntime: () => itemAt(lookups, started++).promise,
+    });
+
+    service.handle({ type: "connect", token, remember: false });
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS);
+    expect(emitted).toEqual([{ type: "error", stage: "connect", code: "timeout" }]);
+
+    // The abandoned lookup now reports a Copilot CLI, after its connection has already given up.
+    lookups[0]?.resolve(READY_RUNTIME);
+    await settle();
+
+    // The next connection must look again rather than trusting that stale answer.
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    expect(started).toBe(2);
+    expect(gateways).toHaveLength(0);
+
+    lookups[1]?.resolve(MISSING_RUNTIME);
+    await settle();
+    expect(emitted[1]).toEqual({ type: "error", stage: "connect", code: "runtime_not_found" });
+    expect(gateways).toHaveLength(0);
+  });
+
   it("does not start the Copilot CLI it finds when the companion shut down while looking", async () => {
     const lookup = deferred<RuntimeStatus>();
     const { service, gateways, emitted } = startService({

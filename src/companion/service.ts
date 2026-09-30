@@ -99,8 +99,11 @@ export function createCompanionService({
     if (knownRuntime.state === "ready") return startGateway(connecting, knownRuntime.path, token);
     void resolveRuntime().then(
       (found) => {
-        knownRuntime = found;
+        // A lookup that outlasted its connection is stale: a newer attempt may already have looked
+        // again and found something else. Recording it would let the next connection start a path
+        // that no longer exists, so an abandoned lookup is dropped and the next one looks afresh.
         if (state !== connecting) return;
+        knownRuntime = found;
         if (found.state === "ready") startGateway(connecting, found.path, token);
         else failConnect(connecting, found.state === "missing" ? "runtime_not_found" : "runtime_unsupported");
       },

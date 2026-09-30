@@ -3,10 +3,16 @@ import { SYSTEM_PATH } from "./system-path.ts";
 
 export const MAX_VERSION_OUTPUT_LENGTH = 4_096;
 
-const VERSION_TIMEOUT_MS = 10_000;
+// Reading the version is the first thing done with an executable the companion is about to hand
+// the user's PAT, and on a machine that has not run the Copilot CLI before it unpacks its runtime,
+// about 138 MB, before printing anything. That has taken over 15 seconds on CI's Intel runners, so
+// a shorter limit would kill a working CLI mid-unpack and report it as not the Copilot CLI.
+const VERSION_TIMEOUT_MS = 30_000;
 const VERSION_ARGUMENTS = ["--version"];
-// `copilot --version` prints "GitHub Copilot CLI 1.0.89-3." and then a line about updates.
-const VERSION_PATTERN = /GitHub Copilot CLI\s+(\d+(?:\.\d+)*(?:-\d+)?)/;
+// `copilot --version` prints "GitHub Copilot CLI 1.0.89-3." and then a line about updates. Anchored
+// to a whole line, so output that merely contains the phrase, such as "Not GitHub Copilot CLI 1.2",
+// cannot pass this executable off as the Copilot CLI.
+const VERSION_PATTERN = /^GitHub Copilot CLI[ \t]+(\d+(?:\.\d+)*(?:-\d+)?)\.?[ \t\r]*$/m;
 
 export type VersionRunner = (executablePath: string) => Promise<string>;
 
