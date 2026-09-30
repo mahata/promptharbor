@@ -296,6 +296,44 @@ describe("runInstaller", () => {
     expect(existsSync(otherHostManifest)).toBe(true);
   });
 
+  it("removes the cache the Copilot CLI unpacked its runtime into, leaving other caches alone", async () => {
+    await install();
+    const { cacheDirectory } = companionInstallPaths(home);
+    const cachesDirectory = dirname(dirname(cacheDirectory));
+    mkdirSync(join(cacheDirectory, "pkg", "darwin-arm64"), { recursive: true });
+    writeFileSync(join(cacheDirectory, "pkg", "darwin-arm64", "runtime"), "unpacked runtime");
+    const otherCache = join(cachesDirectory, "com.example.other");
+    mkdirSync(otherCache, { recursive: true });
+    writeFileSync(join(otherCache, "data"), "someone else's");
+
+    await expect(uninstall()).resolves.toBe(0);
+    expect(existsSync(cacheDirectory)).toBe(false);
+    expect(existsSync(dirname(cacheDirectory))).toBe(false);
+    expect(readFileSync(join(otherCache, "data"), "utf8")).toBe("someone else's");
+    expect(existsSync(cachesDirectory)).toBe(true);
+  });
+
+  it("keeps a prompt-harbor cache directory that holds something else", async () => {
+    await install();
+    const { cacheDirectory } = companionInstallPaths(home);
+    mkdirSync(cacheDirectory, { recursive: true });
+    const siblingPath = join(dirname(cacheDirectory), "notes.txt");
+    writeFileSync(siblingPath, "mine");
+
+    await expect(uninstall()).resolves.toBe(0);
+    expect(existsSync(cacheDirectory)).toBe(false);
+    expect(readFileSync(siblingPath, "utf8")).toBe("mine");
+  });
+
+  it("uninstalls cleanly when the Copilot CLI never unpacked anything", async () => {
+    await install();
+    const { cacheDirectory } = companionInstallPaths(home);
+    expect(existsSync(cacheDirectory)).toBe(false);
+
+    await expect(uninstall()).resolves.toBe(0);
+    expect(messages.error).toEqual([]);
+  });
+
   it("keeps an application directory that holds other files", async () => {
     await install();
     const { applicationDirectory } = companionInstallPaths(home);

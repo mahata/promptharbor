@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   compareVersions,
   createVersionRunner,
-  isSupportedCopilotCliVersion,
-  MINIMUM_COPILOT_CLI_VERSION,
   parseCopilotCliVersion,
   readCopilotCliVersion,
 } from "../../src/companion/version.ts";
@@ -50,19 +48,6 @@ describe("parseCopilotCliVersion", () => {
   );
 });
 
-describe("isSupportedCopilotCliVersion", () => {
-  it("accepts the version the SDK was built against", () => {
-    expect(isSupportedCopilotCliVersion(MINIMUM_COPILOT_CLI_VERSION)).toBe(true);
-  });
-
-  it("accepts a newer Copilot CLI, which is what an auto-updating install becomes", () => {
-    expect(isSupportedCopilotCliVersion("1.0.89-3")).toBe(true);
-  });
-
-  it("refuses one older than the SDK was built against", () => {
-    expect(isSupportedCopilotCliVersion("1.0.84")).toBe(false);
-  });
-});
 
 describe("readCopilotCliVersion", () => {
   it("reports the version the Copilot CLI printed", async () => {

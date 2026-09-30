@@ -1,8 +1,5 @@
 import { spawn } from "node:child_process";
 import { SYSTEM_PATH } from "./system-path.ts";
-import { MINIMUM_COPILOT_CLI_VERSION } from "../protocol/messages.ts";
-
-export { MINIMUM_COPILOT_CLI_VERSION };
 
 export const MAX_VERSION_OUTPUT_LENGTH = 4_096;
 
@@ -12,6 +9,7 @@ const VERSION_ARGUMENTS = ["--version"];
 const VERSION_PATTERN = /GitHub Copilot CLI\s+(\d+(?:\.\d+)*(?:-\d+)?)/;
 
 export type VersionRunner = (executablePath: string) => Promise<string>;
+
 export function compareVersions(first: string, second: string) {
   const firstParts = splitVersion(first);
   const secondParts = splitVersion(second);
@@ -26,13 +24,11 @@ export function parseCopilotCliVersion(output: string) {
   return VERSION_PATTERN.exec(output)?.[1];
 }
 
-export function isSupportedCopilotCliVersion(version: string) {
-  return compareVersions(version, MINIMUM_COPILOT_CLI_VERSION) >= 0;
-}
-
-// Returns the version the Copilot CLI reports, or undefined when it cannot be run or says
-// something this does not recognise. Telling those apart is left to the caller, which already
-// knows whether the executable was there at all.
+// Returns the version the Copilot CLI reports, or undefined when it cannot be run or does not
+// identify itself as the Copilot CLI. Whether that version can actually drive the SDK is not
+// decided here: the SDK negotiates a protocol version with the CLI when it starts it, and that
+// handshake is the real compatibility check. Guessing a version floor instead would reject
+// working CLIs, which is exactly what happened with the version Homebrew installs.
 export async function readCopilotCliVersion(executablePath: string, run: VersionRunner) {
   try {
     return parseCopilotCliVersion(await run(executablePath));
@@ -62,7 +58,7 @@ export function createVersionRunner(cacheDirectory: string): VersionRunner {
     });
 }
 
-// Splits on both separators so a prerelease such as 1.0.89-3 orders after 1.0.89, and a Mach-O
+// Splits on both separators so a prerelease such as 1.0.89-3 orders after 1.0.89, and a macOS
 // version such as 13.5 keeps comparing as it always did.
 function splitVersion(version: string) {
   return version.split(/[.-]/).map((part) => {

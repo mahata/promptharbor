@@ -91,7 +91,7 @@ export function createSdkGateway({ runtimePath, cacheDirectory }: SdkGatewayOpti
       });
       client = startingClient;
 
-      await attempt(() => startingClient.start(), "sdk_start_failed");
+      await attempt(() => startingClient.start(), "sdk_start_failed", runtimeUnsupportedWhenProtocolMismatch);
       ensureOpen("sdk_start_failed");
       const authStatus = await attempt(() => startingClient.getAuthStatus(), "auth_failed");
       ensureOpen("auth_failed");
@@ -189,12 +189,25 @@ function toUsageEvent(model: unknown, cost: unknown): TurnEvent | undefined {
   return isNonNegativeNumber(cost) ? { type: "usage", model, cost } : { type: "usage", model };
 }
 
-async function attempt<Value>(operation: () => Promise<Value>, failureCode: GatewayFailureCode): Promise<Value> {
+async function attempt<Value>(
+  operation: () => Promise<Value>,
+  failureCode: GatewayFailureCode,
+  classify?: (error: unknown) => GatewayFailureCode,
+): Promise<Value> {
   try {
     return await operation();
-  } catch {
-    throw new GatewayFailure(failureCode);
+  } catch (error) {
+    throw new GatewayFailure(classify?.(error) ?? failureCode);
   }
+}
+
+// The SDK negotiates a protocol version with the Copilot CLI it starts, and refuses one it cannot
+// speak in either direction. That is the real compatibility check, so this reports it as the CLI
+// being unsupported rather than as a generic start failure. Matching the SDK's message is the only
+// handle it offers; when it changes, this falls back to sdk_start_failed, which is still right.
+function runtimeUnsupportedWhenProtocolMismatch(error: unknown): GatewayFailureCode {
+  const message = error instanceof Error ? error.message : "";
+  return message.includes("protocol version mismatch") ? "runtime_unsupported" : "sdk_start_failed";
 }
 
 async function stopClient(client: CopilotClient) {

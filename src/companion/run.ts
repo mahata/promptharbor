@@ -93,7 +93,7 @@ export function runCompanion({
       onRuntimeStuck: () => exit(FAILED_EXIT),
     });
     const hello = { type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion, savedToken, runtime: runtime.state } as const;
-    const runtimeVersion = runtime.state === "missing" ? undefined : runtime.version;
+    const runtimeVersion = runtime.state === "ready" ? runtime.version : undefined;
     emit(runtimeVersion === undefined ? hello : { ...hello, runtimeVersion });
     stdin.on("end", () => exit(CLEAN_EXIT));
     stdin.on("data", receiveChunk);

@@ -56,8 +56,9 @@ export async function writeCompanionConfig(configPath: string, config: Companion
 
 // Prefers the recorded path so startup costs no directory scanning, but falls back to searching
 // again when it has gone, which is what happens when the CLI is installed, moved or removed after
-// the companion was. Deliberately does not record what it finds: the installer is the only writer,
-// so a running companion leaves nothing behind in the user's home folder.
+// the companion was. Deliberately does not record what it finds: the installer owns config.json,
+// so a lookup never rewrites it. (The companion does write elsewhere in the home folder: reading
+// the CLI's version has it unpack its runtime into the cache directory.)
 export async function resolveCopilotCli({
   configPath,
   home,

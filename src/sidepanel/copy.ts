@@ -2,7 +2,7 @@ import type { BridgeFailure } from "./companion.ts";
 import type { PageCaptureFailure } from "./page.ts";
 import { PAGE_CAPTURE_TIMEOUT_MS } from "./page.ts";
 import { HOST_NAME } from "../protocol/identity.ts";
-import { CONNECT_TIMEOUT_MS, MAX_OUTPUT_LENGTH, MAX_PROMPT_LENGTH, MINIMUM_COPILOT_CLI_VERSION, TURN_TIMEOUT_MS } from "../protocol/messages.ts";
+import { CONNECT_TIMEOUT_MS, MAX_OUTPUT_LENGTH, MAX_PROMPT_LENGTH, TURN_TIMEOUT_MS } from "../protocol/messages.ts";
 import type { ErrorCode, ModelSummary, RuntimeState } from "../protocol/messages.ts";
 
 const REINSTALL_HINT = "install the Prompt Harbor companion package for this Mac, then choose Try again.";
@@ -24,19 +24,16 @@ const RUNTIME_MISSING_TEXT =
   "The companion could not find the GitHub Copilot CLI, which it needs to reach Copilot. Install it with " +
   `${COPILOT_CLI_INSTALL_COMMAND}, or see the GitHub Copilot CLI documentation, then choose Try again.`;
 
-function runtimeUnsupportedText(version?: string) {
-  const found = version === undefined ? "The GitHub Copilot CLI the companion found" : `GitHub Copilot CLI ${version}`;
-  return (
-    `${found} is older than ${MINIMUM_COPILOT_CLI_VERSION}, or is not the Copilot CLI at all. ` +
-    "Update it with copilot update, then choose Try again."
-  );
-}
+const RUNTIME_UNSUPPORTED_TEXT =
+  "The companion found a program where the GitHub Copilot CLI should be, but it does not identify itself as " +
+  `the Copilot CLI. Install it with ${COPILOT_CLI_INSTALL_COMMAND}, or set COPILOT_CLI_PATH to the right one, ` +
+  "then choose Try again.";
 
 // The panel can explain a missing or unusable Copilot CLI straight from the handshake, before a
 // PAT is ever pasted. "ready" needs no notice.
-export function runtimeStatusText(runtime: RuntimeState, version?: string) {
+export function runtimeStatusText(runtime: RuntimeState) {
   if (runtime === "missing") return RUNTIME_MISSING_TEXT;
-  return runtime === "unsupported" ? runtimeUnsupportedText(version) : undefined;
+  return runtime === "unsupported" ? RUNTIME_UNSUPPORTED_TEXT : undefined;
 }
 
 export const MODEL_PLACEHOLDER_TEXT = {
@@ -94,7 +91,9 @@ export const CONNECT_ERROR_TEXT: Record<ErrorCode<"connect">, string> = {
     "The companion could not read the saved PAT from your macOS login keychain. " +
     "Unlock the keychain and choose Try again, or choose Sign out and paste a new PAT.",
   runtime_not_found: RUNTIME_MISSING_TEXT,
-  runtime_unsupported: runtimeUnsupportedText(),
+  runtime_unsupported:
+    "The GitHub Copilot CLI on this Mac could not agree a protocol with the Copilot SDK the companion was " +
+    "built with, so it is too old or too new for it. Run copilot update, then choose Try again.",
   sdk_start_failed: "The GitHub Copilot CLI on this Mac could not be started, so nothing was sent.",
   auth_failed:
     "GitHub did not accept this PAT. Use an unexpired fine-grained PAT owned by your personal account with the Copilot Requests permission.",

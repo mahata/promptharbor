@@ -1,14 +1,7 @@
 export const PROTOCOL_VERSION = 4;
 
-// The companion drives the Copilot CLI the user installed, and the SDK does not re-export the CLI
-// version it was built against, so the floor is pinned here. Revisit it whenever
-// @github/copilot-sdk is updated: the SDK records its own target in dist/cliVersion.js. The panel
-// names it when the CLI it found is too old, so it lives beside the protocol rather than in the
-// companion, which the panel must never import.
-export const MINIMUM_COPILOT_CLI_VERSION = "1.0.85";
-
-
-export const MAX_TOKEN_LENGTH = 255;export const MAX_FIELD_LENGTH = 200;
+export const MAX_TOKEN_LENGTH = 255;
+export const MAX_FIELD_LENGTH = 200;
 export const MAX_MODELS = 200;
 export const MAX_PROMPT_LENGTH = 32_768;
 export const MAX_OUTPUT_LENGTH = 65_536;

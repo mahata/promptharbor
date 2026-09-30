@@ -70,8 +70,8 @@ argument. The Copilot CLI does not speak that, and its `--acp` mode is a differe
   Chrome channels.
 - A GitHub account with Copilot access, and permission to create a fine-grained PAT for
   it.
-- The [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), version
-  1.0.85 or later, which the companion drives through the SDK. Install it with
+- The [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), which the
+  companion drives through the SDK. Install it with
   `brew install --cask copilot-cli`, or however its documentation suggests. You do not need
   to run `copilot login`: the companion authenticates with the PAT you give the panel, and
   never uses a session you signed in elsewhere. The companion looks for it in your `PATH`
@@ -205,9 +205,11 @@ security delete-generic-password -s io.github.mahata.prompt_harbor -a fine-grain
 ### From a checkout
 
 `pnpm companion:install` builds the companion and installs it the same way, without a
-package. `pnpm companion:uninstall` uninstalls it like the uninstall script, with the
-same question and options, such as `pnpm companion:uninstall --delete-saved-pat`. Both
-also remove `config.json`, which records where the GitHub Copilot CLI was found.
+package, which includes writing `config.json` with the GitHub Copilot CLI it found. It
+overwrites an earlier record only when it finds one, so a stale record survives an install
+that finds nothing. `pnpm companion:uninstall` uninstalls like the uninstall script, with
+the same question and options, such as `pnpm companion:uninstall --delete-saved-pat`, and
+removes `config.json` and the Copilot CLI cache.
 
 Older development builds used different install and Keychain identifiers. Prompt Harbor
 does not migrate or remove those entries.
@@ -309,12 +311,11 @@ If something fails:
   result and stop, because the filter may need revisiting.
 - **`runtime_not_found`:** the companion found no GitHub Copilot CLI. Install it, then
   choose **Try again**, which restarts the companion so it looks again.
-- **`runtime_unsupported`:** the Copilot CLI it found is older than the version the SDK was
-  built against, or does not answer `--version` like the Copilot CLI. Run `copilot update`,
-  then choose **Try again**.
-- **`sdk_start_failed`:** the companion found a Copilot CLI but could not start it. This is
-  also what a Copilot CLI too new for this SDK would look like. Record the CLI's version
-  with `copilot --version` and stop.
+- **`runtime_unsupported`:** the Copilot CLI and the SDK could not agree a protocol version,
+  so the CLI is too old or too new for the SDK this companion was built with. Run
+  `copilot update`, then choose **Try again**.
+- **`sdk_start_failed`:** the companion found a Copilot CLI but could not start it. Record
+  the CLI's version with `copilot --version` and stop.
 - **`keychain_read_failed`, `save_failed` or `forget_failed`:** `/usr/bin/security` could
   not read, save or delete the saved PAT. The error says what still works. Record the
   result, and delete any leftover item in Keychain Access.
@@ -390,10 +391,13 @@ The companion:
   the path it names is not there, the companion reports `missing` rather than quietly
   running a different Copilot CLI. A `missing` result is looked up again when you connect,
   so installing the CLI and choosing **Try again** is enough.
-- Runs `copilot --version` with only a system `PATH` to read the version, stopping it after
-  10 seconds, and refuses anything older than the version the SDK was built against
-  (1.0.85). A newer Copilot CLI is accepted, because the CLI updates itself on its own
-  schedule; if one ever breaks the SDK's protocol, that surfaces as `sdk_start_failed`.
+- Runs `copilot --version` to read the version, stopping it after 10 seconds, and treats
+  anything that does not answer like the Copilot CLI as unsupported. It applies no version
+  floor of its own. The SDK negotiates a protocol version with the CLI when it starts it,
+  and refuses one it cannot speak in either direction, so that handshake decides
+  compatibility and reports `runtime_unsupported`. An earlier version of this companion did
+  guess a floor from the version the SDK bundles, which rejected the Copilot CLI that
+  Homebrew installs.
 - Configures the SDK:
   - `mode: "empty"` and `useLoggedInUser: false`, which stop the runtime from using stored
     OAuth tokens or `gh` CLI authentication and turn off the SDK's other ambient features.
@@ -475,9 +479,9 @@ Accepted risks:
   `src/protocol/messages.ts`, then run `pnpm check`, install a new package and repeat
   the live check.
 - The Copilot CLI is no longer pinned by this project: it is whatever is installed on your
-  Mac, and it updates itself. The companion checks it is not older than the version the SDK
-  was built against, but cannot check one that is newer. A CLI that outruns the SDK will
-  fail at `sdk_start_failed` rather than being caught up front.
+  Mac, and it updates itself. The SDK's protocol handshake catches a CLI that is too old or
+  too new, but only when you connect, not when the panel opens. Its own behaviour within a
+  compatible protocol version is not pinned at all.
 - `COPILOT_CLI_PATH` makes the companion start whatever executable it names. Anyone who can
   set it in Chrome's environment, or write `config.json`, chooses the program the companion
   runs. Both need access to your macOS user account, which can already run that program
@@ -507,8 +511,8 @@ that build and a package made from it:
 - It is a signed executable for this Mac's architecture that refuses to start unless Chrome
   starts it for the extension, and ignores `NODE_OPTIONS`.
 - It greets Chrome with the SDK version it was built with and the Copilot CLI it found, in
-  an environment with no `PATH`, so without a separate Node.js, and leaves nothing in the
-  home folder it was given.
+  an environment with no `PATH`, so without a separate Node.js, and puts nothing in the home
+  folder it was given but the Copilot CLI's cache.
 - It carries its uninstall script, this project's license and the third-party notices, and
   no Copilot runtime package.
 - A copy of it elsewhere connects through its own bundled SDK and the Copilot CLI on this
@@ -589,9 +593,14 @@ The code is organized as:
 - Checked here: the SDK drives an installed Copilot CLI. Against
   `/opt/homebrew/bin/copilot` 1.0.89-3, `start()` succeeded, `getAuthStatus()` returned
   `{"isAuthenticated":false,...}` for a deliberately invalid PAT, and `listModels()` failed
-  only on that PAT. The SDK records 1.0.85 as the CLI version it was built against in
-  `dist/cliVersion.js`, so a newer CLI works; it does not export that constant, which is
-  why `MINIMUM_COPILOT_CLI_VERSION` is kept in `src/protocol/messages.ts`.
+  only on that PAT.
+- The SDK checks Copilot CLI compatibility by negotiating a protocol version when it starts
+  one: `client.js` accepts protocol versions `MIN_PROTOCOL_VERSION` (3) through
+  `getSdkProtocolVersion()` and throws "SDK protocol version mismatch" otherwise. Its
+  `COPILOT_CLI_VERSION` constant (1.0.85) is only the version it unpacks for its own bundled
+  runtime, which this project no longer uses, so it is not a compatibility floor. Treating it
+  as one rejected Copilot CLI 1.0.83, which is what `brew install --cask copilot-cli`
+  installed in CI.
 - Node.js is MIT-licensed and its `LICENSE`, which also covers the libraries built into the
   binary, grants the right to distribute. That is what makes shipping it inside the
   companion executable allowed, and the build includes that file in

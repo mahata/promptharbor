@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readCompanionConfig, resolveCopilotCli, writeCompanionConfig } from "../../src/companion/config.ts";
 import { describeCopilotRuntime } from "../../src/companion/runtime.ts";
-import { MINIMUM_COPILOT_CLI_VERSION } from "../../src/protocol/messages.ts";
 
 const HOME = "/Users/octocat";
 const CHROME_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
@@ -101,7 +100,7 @@ describe("resolveCopilotCli", () => {
     await expect(resolveCopilotCli(options())).resolves.toEqual({ path: undefined, recorded: undefined });
   });
 
-  it("writes nothing, so a running companion leaves the home folder untouched", async () => {
+  it("leaves the recorded path alone, so only the installer ever rewrites it", async () => {
     await writeCompanionConfig(configPath, { copilotCliPath: "/gone/copilot" });
     await resolveCopilotCli(options({ isExecutable: found(HOMEBREW_CLI) }));
 
@@ -143,28 +142,20 @@ describe("describeCopilotRuntime", () => {
     await expect(describeCopilotRuntime(runtimeOptions())).resolves.toEqual({ state: "missing" });
   });
 
-  it("is unsupported when the Copilot CLI is older than the SDK was built against", async () => {
-    await expect(
-      describeCopilotRuntime(
-        runtimeOptions({ isExecutable: found(HOMEBREW_CLI), runVersion: async () => "GitHub Copilot CLI 1.0.84.\n" }),
-      ),
-    ).resolves.toEqual({ state: "unsupported", path: HOMEBREW_CLI, version: "1.0.84" });
-  });
-
-  it("is unsupported, with no version, when what it found does not answer like the Copilot CLI", async () => {
+  it("is unsupported when what it found does not answer like the Copilot CLI", async () => {
     await expect(
       describeCopilotRuntime(runtimeOptions({ isExecutable: found(HOMEBREW_CLI), runVersion: async () => "some other tool 4.2\n" })),
     ).resolves.toEqual({ state: "unsupported", path: HOMEBREW_CLI });
   });
 
-  it("accepts exactly the version the SDK was built against", async () => {
+  // Homebrew's cask installs 1.0.83, older than the version the SDK bundles. Guessing a floor from
+  // the SDK's own build target rejected it, so no version floor is applied: the SDK's protocol
+  // handshake decides, and reports runtime_unsupported at connect if it cannot agree one.
+  it("is ready for a Copilot CLI older than the version the SDK was built against", async () => {
     await expect(
       describeCopilotRuntime(
-        runtimeOptions({
-          isExecutable: found(HOMEBREW_CLI),
-          runVersion: async () => `GitHub Copilot CLI ${MINIMUM_COPILOT_CLI_VERSION}.\n`,
-        }),
+        runtimeOptions({ isExecutable: found(HOMEBREW_CLI), runVersion: async () => "GitHub Copilot CLI 1.0.83.\n" }),
       ),
-    ).resolves.toEqual({ state: "ready", path: HOMEBREW_CLI, version: MINIMUM_COPILOT_CLI_VERSION });
+    ).resolves.toEqual({ state: "ready", path: HOMEBREW_CLI, version: "1.0.83" });
   });
 });

@@ -3,13 +3,15 @@ import { homedir } from "node:os";
 import { resolveCopilotCli } from "./config.ts";
 import type { ResolveOptions } from "./config.ts";
 import { copilotCliCacheDirectory } from "./layout.ts";
-import { createVersionRunner, isSupportedCopilotCliVersion, readCopilotCliVersion } from "./version.ts";
+import { createVersionRunner, readCopilotCliVersion } from "./version.ts";
 import type { VersionRunner } from "./version.ts";
 
 export type RuntimeStatus =
   | { state: "ready"; path: string; version: string }
-  // Something is at `path`, but it is too old or does not answer `--version` like the Copilot CLI.
-  | { state: "unsupported"; path: string; version?: string }
+  // Something is at `path`, but it does not answer `--version` like the Copilot CLI, so there is
+  // no point handing it to the SDK. Whether a real Copilot CLI is too old or too new for the SDK
+  // is not decided here: the SDK settles that with a protocol handshake when it starts one.
+  | { state: "unsupported"; path: string }
   | { state: "missing" };
 
 export type DescribeRuntimeOptions = Partial<ResolveOptions> & {
@@ -28,8 +30,7 @@ export async function describeCopilotRuntime({
   const { path } = await resolveCopilotCli({ home, ...options });
   if (path === undefined) return { state: "missing" };
   const version = await readCopilotCliVersion(path, runVersion ?? (await cachedVersionRunner(cacheDirectory)));
-  if (version === undefined) return { state: "unsupported", path };
-  return isSupportedCopilotCliVersion(version) ? { state: "ready", path, version } : { state: "unsupported", path, version };
+  return version === undefined ? { state: "unsupported", path } : { state: "ready", path, version };
 }
 
 async function cachedVersionRunner(cacheDirectory: string) {

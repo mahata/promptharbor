@@ -136,7 +136,7 @@ function handleBridgeEvent(event: BridgeEvent) {
       // A companion that cannot reach a usable Copilot CLI stays connected but has nothing to
       // connect with, so the panel explains that instead of taking a PAT it could not use. With a
       // PAT already saved it keeps the chat view, which is what offers Sign out to delete it.
-      const runtimeNotice = runtimeStatusText(event.runtime, event.runtimeVersion);
+      const runtimeNotice = runtimeStatusText(event.runtime);
       status.textContent = "";
       if (runtimeNotice !== undefined) {
         phase = "no_runtime";

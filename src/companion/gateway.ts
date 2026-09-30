@@ -16,6 +16,7 @@ export type CopilotGateway = {
 };
 
 export const CONNECT_FAILURE_CODES = [
+  "runtime_unsupported",
   "sdk_start_failed",
   "auth_failed",
   "models_unavailable",

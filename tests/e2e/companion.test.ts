@@ -232,9 +232,9 @@ test("explains how to install a missing Copilot CLI, then connects once Try agai
   expect(networkRequests).toEqual([]);
 });
 
-test("says so when the Copilot CLI on this Mac is too old, and still lets a saved PAT be deleted", async () => {
+test("says so when what it found is not the Copilot CLI, and still lets a saved PAT be deleted", async () => {
   const { page, savedToken } = await openPanel({ copilotCli: "unsupported", savedToken: approvedToken });
-  await expect(page.getByRole("alert")).toContainText("GitHub Copilot CLI 1.0.1 is older than");
+  await expect(page.getByRole("alert")).toContainText("does not identify itself as the Copilot CLI");
   await expect(page.getByRole("alert")).toContainText("(unsupported)");
   await expect(patField(page)).toBeHidden();
   await expect(promptField(page)).toBeDisabled();

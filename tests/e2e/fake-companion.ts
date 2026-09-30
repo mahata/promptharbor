@@ -41,7 +41,7 @@ rmSync(runningMarker, { force: true });
 function fakeRuntimeStatus(): RuntimeStatus {
   const state = existsSync(runtimeStatePath) ? readFileSync(runtimeStatePath, "utf8").trim() : "ready";
   if (state === "missing") return { state: "missing" };
-  if (state === "unsupported") return { state: "unsupported", path: "/opt/homebrew/bin/copilot", version: "1.0.1" };
+  if (state === "unsupported") return { state: "unsupported", path: "/opt/homebrew/bin/copilot" };
   return { state: "ready", path: "/opt/homebrew/bin/copilot", version: "1.0.89-3" };
 }
 
