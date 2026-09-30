@@ -396,8 +396,13 @@ The companion:
   the path it names is not there, the companion reports `missing` rather than quietly
   running a different Copilot CLI. A `missing` result is looked up again when you connect,
   so installing the CLI and choosing **Try again** is enough.
-- Runs `copilot --version` to read the version, stopping it after 10 seconds, and treats
-  anything that does not answer like the Copilot CLI as unsupported. It applies no version
+- Runs `copilot --version` to read the version, stopping it after 30 seconds, and treats
+  anything that does not answer like the Copilot CLI as unsupported. It accepts the version
+  banner only as a whole line, so a program whose output merely mentions the Copilot CLI
+  cannot pass as one. The limit is that
+  generous because the first run in a home folder the Copilot CLI has not used unpacks its
+  runtime, about 138 MB, before printing anything; a shorter one would kill a working CLI
+  mid-unpack and report it as not the Copilot CLI. It applies no version
   floor of its own. The SDK negotiates a protocol version with the CLI when it starts it,
   and refuses one it cannot speak in either direction, so that handshake decides
   compatibility and reports `runtime_unsupported`. An earlier version of this companion did
