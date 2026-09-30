@@ -112,8 +112,9 @@ describe("panel to companion messages", () => {
 
 describe("companion to panel messages", () => {
   it.each([
-    { type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion: "1.0.14", savedToken: false },
-    { type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion: "1.0.14", savedToken: true },
+    { type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion: "1.0.14", savedToken: false, runtime: "missing" },
+    { type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion: "1.0.14", savedToken: true, runtime: "unsupported" },
+    { type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion: "1.0.14", savedToken: true, runtime: "ready", runtimeVersion: "1.0.89-3" },
     { type: "connected", models: [] },
     {
       type: "connected",
@@ -144,10 +145,16 @@ describe("companion to panel messages", () => {
   });
 
   it.each([
-    ["a non-integer protocol version", { type: "hello", protocolVersion: 1.5, sdkVersion: "1.0.14", savedToken: false }],
-    ["a missing SDK version", { type: "hello", protocolVersion: 2, savedToken: false }],
-    ["a hello without the saved-token flag", { type: "hello", protocolVersion: 1, sdkVersion: "1.0.14" }],
-    ["a saved-token flag that is not a boolean", { type: "hello", protocolVersion: 2, sdkVersion: "1.0.14", savedToken: "yes" }],
+    ["a non-integer protocol version", { type: "hello", protocolVersion: 1.5, sdkVersion: "1.0.14", savedToken: false, runtime: "ready" }],
+    ["a missing SDK version", { type: "hello", protocolVersion: 2, savedToken: false, runtime: "ready" }],
+    ["a hello without the saved-token flag", { type: "hello", protocolVersion: 1, sdkVersion: "1.0.14", runtime: "ready" }],
+    ["a saved-token flag that is not a boolean", { type: "hello", protocolVersion: 2, sdkVersion: "1.0.14", savedToken: "yes", runtime: "ready" }],
+    ["a hello without the runtime state", { type: "hello", protocolVersion: 4, sdkVersion: "1.0.14", savedToken: false }],
+    ["an unknown runtime state", { type: "hello", protocolVersion: 4, sdkVersion: "1.0.14", savedToken: false, runtime: "broken" }],
+    [
+      "a runtime version that is not a string",
+      { type: "hello", protocolVersion: 4, sdkVersion: "1.0.14", savedToken: false, runtime: "ready", runtimeVersion: 1 },
+    ],
     ["non-array models", { type: "connected", models: "gpt-5-mini" }],
     ["a model without a name", { type: "connected", models: [{ id: "gpt-5-mini" }] }],
     ["a negative multiplier", { type: "connected", models: [{ id: "m", name: "M", multiplier: -1 }] }],

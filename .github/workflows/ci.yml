@@ -147,6 +147,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install the GitHub Copilot CLI
+        # The companion no longer carries a Copilot runtime: it drives the Copilot CLI installed on
+        # the machine, so the tests need one here as a person using the companion would have.
+        run: |
+          brew install --cask copilot-cli
+          copilot --version
+
       - name: Build and test the companion
         run: pnpm test:companion
 

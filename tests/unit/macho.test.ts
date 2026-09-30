@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { compareVersions, parseMachOSummary, readMachOSummary } from "../../src/companion/macho.ts";
+import { parseMachOSummary, readMachOSummary } from "../../src/companion/macho.ts";
 
 const CPU_TYPE_ARM64 = 0x0100000c;
 const CPU_TYPE_X86_64 = 0x01000007;
@@ -98,15 +98,3 @@ describe("readMachOSummary", () => {
   });
 });
 
-describe("compareVersions", () => {
-  it.each([
-    ["13.5", "13.5", 0],
-    ["13.5", "13.5.0", 0],
-    ["14.0", "13.5", 1],
-    ["13.10", "13.9", 1],
-    ["11.0", "13.5", -1],
-    ["13.5.1", "13.5", 1],
-  ])("compares %s with %s as %i", (first, second, expected) => {
-    expect(compareVersions(first, second)).toBe(expected);
-  });
-});

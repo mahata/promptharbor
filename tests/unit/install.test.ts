@@ -9,8 +9,13 @@ import { companionInstallPaths, createTerminalConfirm, runInstaller, SAVED_PAT_Q
 import type { Confirm } from "../../src/companion/install.ts";
 import { createKeychainStore, DELETE_SAVED_TOKEN_COMMAND } from "../../src/companion/keychain.ts";
 import type { SecurityRunner } from "../../src/companion/keychain.ts";
-import { bundledRuntimePath, COMPANION_EXECUTABLE_NAME } from "../../src/companion/layout.ts";
+import { COMPANION_EXECUTABLE_NAME } from "../../src/companion/layout.ts";
+import { CONFIG_FILE_NAME } from "../../src/companion/config.ts";
 import { EXTENSION_ORIGIN, HOST_NAME } from "../../src/protocol/identity.ts";
+
+const COPILOT_CLI_PATH = "/opt/homebrew/bin/copilot";
+// The installer looks for a Copilot CLI on the real machine, which these tests must not depend on.
+const discoverCli = async () => COPILOT_CLI_PATH;
 
 let root: string;
 let home: string;
@@ -20,14 +25,15 @@ let hasSavedToken: Mock<() => Promise<boolean>>;
 let forgetToken: Mock<() => Promise<boolean>>;
 
 function writeBuild(label: string) {
-  const runtimePath = bundledRuntimePath(buildDirectory, "arm64");
-  mkdirSync(dirname(runtimePath), { recursive: true });
+  const nestedDirectory = join(buildDirectory, "resources", "nested");
+  mkdirSync(nestedDirectory, { recursive: true });
   const executablePath = join(buildDirectory, COMPANION_EXECUTABLE_NAME);
+  const nestedExecutablePath = join(nestedDirectory, "helper");
   writeFileSync(executablePath, `#!/bin/sh\necho '${label}'\n`);
-  writeFileSync(runtimePath, "runtime wrapper");
-  writeFileSync(join(dirname(runtimePath), "runtime.node"), "runtime library");
+  writeFileSync(nestedExecutablePath, "nested helper");
+  writeFileSync(join(nestedDirectory, "data.bin"), "nested data");
   chmodSync(executablePath, 0o755);
-  chmodSync(runtimePath, 0o755);
+  chmodSync(nestedExecutablePath, 0o755);
 }
 
 function install(overrides: Partial<Parameters<typeof runInstaller>[0]> = {}) {
@@ -36,6 +42,7 @@ function install(overrides: Partial<Parameters<typeof runInstaller>[0]> = {}) {
     platform: "darwin",
     home,
     buildDirectory,
+    discoverCli,
     store: { hasSavedToken, forgetToken },
     output: { log: (line) => messages.log.push(line), error: (line) => messages.error.push(line) },
     ...overrides,
@@ -82,6 +89,8 @@ describe("companionInstallPaths", () => {
     expect(companionInstallPaths("/Users/octocat")).toEqual({
       applicationDirectory: "/Users/octocat/Library/Application Support/prompt-harbor",
       companionDirectory: "/Users/octocat/Library/Application Support/prompt-harbor/companion",
+      configPath: `/Users/octocat/Library/Application Support/prompt-harbor/${CONFIG_FILE_NAME}`,
+      cacheDirectory: "/Users/octocat/Library/Caches/prompt-harbor/copilot-cli",
       executablePath: "/Users/octocat/Library/Application Support/prompt-harbor/companion/prompt-harbor-companion",
       hostManifestPath: `/Users/octocat/Library/Application Support/Google/Chrome/NativeMessagingHosts/${HOST_NAME}.json`,
     });
@@ -92,12 +101,27 @@ describe("runInstaller", () => {
   it("copies the whole build, keeping its executables executable", async () => {
     await expect(install()).resolves.toBe(0);
     const { companionDirectory, executablePath } = companionInstallPaths(home);
-    const runtimePath = bundledRuntimePath(companionDirectory, "arm64");
+    const nestedExecutablePath = join(companionDirectory, "resources", "nested", "helper");
 
     expect(runInstalledCompanion()).toBe("first build\n");
     expect(statSync(executablePath).mode & 0o777).toBe(0o755);
-    expect(statSync(runtimePath).mode & 0o777).toBe(0o755);
-    expect(readFileSync(join(dirname(runtimePath), "runtime.node"), "utf8")).toBe("runtime library");
+    expect(statSync(nestedExecutablePath).mode & 0o777).toBe(0o755);
+    expect(readFileSync(join(dirname(nestedExecutablePath), "data.bin"), "utf8")).toBe("nested data");
+  });
+
+  it("records the Copilot CLI it found so the companion need not search on every start", async () => {
+    await expect(install()).resolves.toBe(0);
+    const { configPath } = companionInstallPaths(home);
+
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual({ copilotCliPath: COPILOT_CLI_PATH });
+  });
+
+  it("still installs when no Copilot CLI is on this Mac, leaving the companion to look again", async () => {
+    await expect(install({ discoverCli: async () => undefined })).resolves.toBe(0);
+    const { configPath, executablePath } = companionInstallPaths(home);
+
+    expect(existsSync(executablePath)).toBe(true);
+    expect(existsSync(configPath)).toBe(false);
   });
 
   it("registers the installed copy with Chrome for the pinned extension only", async () => {
@@ -147,7 +171,7 @@ describe("runInstaller", () => {
     await expect(install()).resolves.toBe(0);
     expect(runInstalledCompanion()).toBe("second build\n");
     expect(existsSync(join(companionDirectory, "left-by-earlier-build"))).toBe(false);
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    expect(readdirSync(applicationDirectory)).toEqual(["companion", CONFIG_FILE_NAME]);
   });
 
   it("replaces the launcher that earlier versions installed in its place", async () => {
@@ -168,7 +192,7 @@ describe("runInstaller", () => {
 
     await expect(install()).rejects.toThrow();
     expect(runInstalledCompanion()).toBe("first build\n");
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    expect(readdirSync(applicationDirectory)).toEqual(["companion", CONFIG_FILE_NAME]);
   });
 
   it("puts the earlier companion back when the new host manifest cannot take the old one's place", async () => {
@@ -180,7 +204,7 @@ describe("runInstaller", () => {
 
     await expect(install()).rejects.toThrow();
     expect(runInstalledCompanion()).toBe("first build\n");
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    expect(readdirSync(applicationDirectory)).toEqual(["companion", CONFIG_FILE_NAME]);
     expect(hostManifestCopies()).toEqual([]);
   });
 
@@ -211,7 +235,7 @@ describe("runInstaller", () => {
 
     await expect(install()).rejects.toThrow();
     expect(runInstalledCompanion()).toBe("first build\n");
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    expect(readdirSync(applicationDirectory)).toEqual(["companion", CONFIG_FILE_NAME]);
   });
 
   it("finishes the update that an interrupted install started", async () => {
@@ -222,7 +246,7 @@ describe("runInstaller", () => {
 
     await expect(install()).resolves.toBe(0);
     expect(runInstalledCompanion()).toBe("second build\n");
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    expect(readdirSync(applicationDirectory)).toEqual(["companion", CONFIG_FILE_NAME]);
   });
 
   it("keeps companions moved aside while none is in place until a new copy is in place", async () => {
@@ -238,7 +262,7 @@ describe("runInstaller", () => {
     repairBuild();
     await expect(install()).resolves.toBe(0);
     expect(runInstalledCompanion()).toBe("first build\n");
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    expect(readdirSync(applicationDirectory)).toEqual(["companion", CONFIG_FILE_NAME]);
   });
 
   it("clears copies that interrupted installs left beside an installed companion, even when the new copy fails", async () => {
@@ -250,7 +274,7 @@ describe("runInstaller", () => {
 
     await expect(install()).rejects.toThrow();
     expect(runInstalledCompanion()).toBe("first build\n");
-    expect(readdirSync(applicationDirectory)).toEqual(["companion"]);
+    expect(readdirSync(applicationDirectory)).toEqual(["companion", CONFIG_FILE_NAME]);
   });
 
   it("refuses to install without a built companion, without touching the home directory", async () => {
@@ -270,6 +294,44 @@ describe("runInstaller", () => {
     expect(existsSync(applicationDirectory)).toBe(false);
     expect(existsSync(hostManifestPath)).toBe(false);
     expect(existsSync(otherHostManifest)).toBe(true);
+  });
+
+  it("removes the cache the Copilot CLI unpacked its runtime into, leaving other caches alone", async () => {
+    await install();
+    const { cacheDirectory } = companionInstallPaths(home);
+    const cachesDirectory = dirname(dirname(cacheDirectory));
+    mkdirSync(join(cacheDirectory, "pkg", "darwin-arm64"), { recursive: true });
+    writeFileSync(join(cacheDirectory, "pkg", "darwin-arm64", "runtime"), "unpacked runtime");
+    const otherCache = join(cachesDirectory, "com.example.other");
+    mkdirSync(otherCache, { recursive: true });
+    writeFileSync(join(otherCache, "data"), "someone else's");
+
+    await expect(uninstall()).resolves.toBe(0);
+    expect(existsSync(cacheDirectory)).toBe(false);
+    expect(existsSync(dirname(cacheDirectory))).toBe(false);
+    expect(readFileSync(join(otherCache, "data"), "utf8")).toBe("someone else's");
+    expect(existsSync(cachesDirectory)).toBe(true);
+  });
+
+  it("keeps a prompt-harbor cache directory that holds something else", async () => {
+    await install();
+    const { cacheDirectory } = companionInstallPaths(home);
+    mkdirSync(cacheDirectory, { recursive: true });
+    const siblingPath = join(dirname(cacheDirectory), "notes.txt");
+    writeFileSync(siblingPath, "mine");
+
+    await expect(uninstall()).resolves.toBe(0);
+    expect(existsSync(cacheDirectory)).toBe(false);
+    expect(readFileSync(siblingPath, "utf8")).toBe("mine");
+  });
+
+  it("uninstalls cleanly when the Copilot CLI never unpacked anything", async () => {
+    await install();
+    const { cacheDirectory } = companionInstallPaths(home);
+    expect(existsSync(cacheDirectory)).toBe(false);
+
+    await expect(uninstall()).resolves.toBe(0);
+    expect(messages.error).toEqual([]);
   });
 
   it("keeps an application directory that holds other files", async () => {

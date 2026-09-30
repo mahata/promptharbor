@@ -10,6 +10,8 @@ import { EXTENSION_ORIGIN } from "../../src/protocol/identity.ts";
 import { TURN_TIMEOUT_MS } from "../../src/protocol/messages.ts";
 import type { TurnOutcome } from "../../src/protocol/messages.ts";
 
+const READY_RUNTIME = { state: "ready", path: "/opt/homebrew/bin/copilot", version: "1.0.89-3" } as const;
+
 const token = `github_pat_${"R".repeat(82)}`;
 
 function lengthPrefix(length: number) {
@@ -75,7 +77,16 @@ function startCompanion({
   stderr.setEncoding("utf8");
   stderr.on("data", (chunk: string) => (errorText += chunk));
   const createGateway = vi.fn(() => gateway);
-  const companion = runCompanion({ stdin, stdout, stderr, args, createGateway, store, sdkVersion: "1.0.14" });
+  const companion = runCompanion({
+    stdin,
+    stdout,
+    stderr,
+    args,
+    createGateway,
+    resolveRuntime: async () => READY_RUNTIME,
+    store,
+    sdkVersion: "1.0.14",
+  });
   return {
     stdin,
     stdout,
@@ -87,7 +98,7 @@ function startCompanion({
   };
 }
 
-const hello = { type: "hello", protocolVersion: 3, sdkVersion: "1.0.14", savedToken: false };
+const hello = { type: "hello", protocolVersion: 4, sdkVersion: "1.0.14", savedToken: false, runtime: "ready", runtimeVersion: "1.0.89-3" };
 const connected = { type: "connected", login: "octocat", models: [{ id: "gpt-5-mini", name: "GPT-5 mini", multiplier: 0 }] };
 
 afterEach(() => {

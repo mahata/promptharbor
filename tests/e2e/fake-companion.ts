@@ -4,6 +4,7 @@ import { GatewayFailure } from "../../src/companion/gateway.ts";
 import type { CopilotGateway } from "../../src/companion/gateway.ts";
 import type { CredentialStore } from "../../src/companion/keychain.ts";
 import { runCompanion } from "../../src/companion/run.ts";
+import type { RuntimeStatus } from "../../src/companion/runtime.ts";
 import type { TurnOutcome } from "../../src/protocol/messages.ts";
 
 const FAKE_MODELS = [
@@ -18,6 +19,9 @@ const STEP_DELAY_MS = 20;
 
 const runningMarker = join(requiredEnvironment("FAKE_COMPANION_STATE_DIR"), `${process.pid}.running`);
 const keychainPath = requiredEnvironment("FAKE_KEYCHAIN_PATH");
+// A test writes this file to pretend the Copilot CLI is missing or too old. It is read on every
+// lookup, so restarting the companion with Try again picks up a change.
+const runtimeStatePath = join(requiredEnvironment("FAKE_COMPANION_STATE_DIR"), "runtime-state");
 writeFileSync(runningMarker, "");
 
 const companion = runCompanion({
@@ -26,12 +30,20 @@ const companion = runCompanion({
   stderr: process.stderr,
   args: process.argv.slice(2),
   createGateway: createFakeGateway,
+  resolveRuntime: async () => fakeRuntimeStatus(),
   store: createFakeKeychain(),
   sdkVersion: `fake-${process.pid}`,
 });
 process.once("SIGTERM", () => void companion.shutdown());
 process.exitCode = await companion.done;
 rmSync(runningMarker, { force: true });
+
+function fakeRuntimeStatus(): RuntimeStatus {
+  const state = existsSync(runtimeStatePath) ? readFileSync(runtimeStatePath, "utf8").trim() : "ready";
+  if (state === "missing") return { state: "missing" };
+  if (state === "unsupported") return { state: "unsupported", path: "/opt/homebrew/bin/copilot" };
+  return { state: "ready", path: "/opt/homebrew/bin/copilot", version: "1.0.89-3" };
+}
 
 function createFakeGateway(): CopilotGateway {
   let turnsInConversation = 0;

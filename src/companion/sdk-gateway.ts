@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CopilotClient, CopilotSession, ModelInfo, SessionEvent } from "@github/copilot-sdk";
@@ -21,9 +21,9 @@ const TURN_FAILURE_BY_ERROR_TYPE = new Map<string, TurnFailureCode>([
 
 type Conversation = { session: CopilotSession; model: string };
 
-export type SdkGatewayOptions = { runtimePath?: string };
+export type SdkGatewayOptions = { runtimePath: string; cacheDirectory: string };
 
-export function createSdkGateway({ runtimePath }: SdkGatewayOptions = {}): CopilotGateway {
+export function createSdkGateway({ runtimePath, cacheDirectory }: SdkGatewayOptions): CopilotGateway {
   let closed = false;
   let client: CopilotClient | undefined;
   let privateHome: string | undefined;
@@ -74,10 +74,14 @@ export function createSdkGateway({ runtimePath }: SdkGatewayOptions = {}): Copil
         throw new GatewayFailure("sdk_start_failed");
       }
       privateHome = home;
-      const env = { HOME: home, TMPDIR: home, COPILOT_HOME: home, PATH: SYSTEM_PATH };
+      // HOME is the companion's cache directory so the Copilot CLI unpacks its runtime once and
+      // reuses it, while its Copilot home, temporary directory and working directory stay this
+      // throwaway one, keeping it away from the user's own ~/.copilot configuration.
+      await mkdir(cacheDirectory, { recursive: true }).catch(() => undefined);
+      const env = { HOME: cacheDirectory, TMPDIR: home, COPILOT_HOME: home, PATH: SYSTEM_PATH };
       const startingClient = new CopilotClient({
         mode: "empty",
-        connection: RuntimeConnection.forStdio(runtimePath === undefined ? { env } : { path: runtimePath, env }),
+        connection: RuntimeConnection.forStdio({ path: runtimePath, env }),
         baseDirectory: home,
         workingDirectory: home,
         gitHubToken: token,
@@ -87,7 +91,7 @@ export function createSdkGateway({ runtimePath }: SdkGatewayOptions = {}): Copil
       });
       client = startingClient;
 
-      await attempt(() => startingClient.start(), "sdk_start_failed");
+      await attempt(() => startingClient.start(), "sdk_start_failed", runtimeUnsupportedWhenProtocolMismatch);
       ensureOpen("sdk_start_failed");
       const authStatus = await attempt(() => startingClient.getAuthStatus(), "auth_failed");
       ensureOpen("auth_failed");
@@ -185,12 +189,25 @@ function toUsageEvent(model: unknown, cost: unknown): TurnEvent | undefined {
   return isNonNegativeNumber(cost) ? { type: "usage", model, cost } : { type: "usage", model };
 }
 
-async function attempt<Value>(operation: () => Promise<Value>, failureCode: GatewayFailureCode): Promise<Value> {
+async function attempt<Value>(
+  operation: () => Promise<Value>,
+  failureCode: GatewayFailureCode,
+  classify?: (error: unknown) => GatewayFailureCode,
+): Promise<Value> {
   try {
     return await operation();
-  } catch {
-    throw new GatewayFailure(failureCode);
+  } catch (error) {
+    throw new GatewayFailure(classify?.(error) ?? failureCode);
   }
+}
+
+// The SDK negotiates a protocol version with the Copilot CLI it starts, and refuses one it cannot
+// speak in either direction. That is the real compatibility check, so this reports it as the CLI
+// being unsupported rather than as a generic start failure. Matching the SDK's message is the only
+// handle it offers; when it changes, this falls back to sdk_start_failed, which is still right.
+function runtimeUnsupportedWhenProtocolMismatch(error: unknown): GatewayFailureCode {
+  const message = error instanceof Error ? error.message : "";
+  return message.includes("protocol version mismatch") ? "runtime_unsupported" : "sdk_start_failed";
 }
 
 async function stopClient(client: CopilotClient) {

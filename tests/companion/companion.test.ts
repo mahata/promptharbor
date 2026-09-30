@@ -11,24 +11,23 @@ import { companionBuildDirectory, UNINSTALL_SCRIPT } from "../../src/companion/b
 import { createFrameDecoder, encodeFrame } from "../../src/companion/framing.ts";
 import { companionInstallPaths } from "../../src/companion/install.ts";
 import { nodeLicenseUrl } from "../../src/companion/notices.ts";
-import {
-  bundledRuntimePath,
-  COMPANION_EXECUTABLE_NAME,
-  LICENSE_FILE_NAME,
-  NOTICES_FILE_NAME,
-  UNINSTALL_SCRIPT_NAME,
-} from "../../src/companion/layout.ts";
+import { COMPANION_EXECUTABLE_NAME, LICENSE_FILE_NAME, NOTICES_FILE_NAME, UNINSTALL_SCRIPT_NAME } from "../../src/companion/layout.ts";
+import { discoverCopilotCli } from "../../src/companion/locate.ts";
 import { REFUSAL_NOTICE } from "../../src/companion/run.ts";
 import { EXTENSION_ORIGIN } from "../../src/protocol/identity.ts";
 import { PROTOCOL_VERSION } from "../../src/protocol/messages.ts";
 
-const GITHUB_TEAM_ID = "VEKTX9H2N7";
 const MACH_O_ARCHITECTURES: Partial<Record<string, string>> = { arm64: "arm64", x64: "x86_64" };
 const SANDBOX_EXEC_PATH = "/usr/bin/sandbox-exec";
 // Denies every network connection except to Unix domain sockets, so a fake PAT never leaves this Mac.
 const NO_NETWORK_PROFILE = "(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote unix-socket))";
 const fakeToken = `github_pat_${"Z".repeat(82)}`;
-const startupTimeout = { timeout: 10_000 };
+// A companion starting in a home folder it has not used before has the Copilot CLI unpack its
+// runtime there, about 138 MB, before it can report a version and greet Chrome. Every test here
+// gets its own home folder, so every one pays that cost, and on CI's Intel runners it has taken
+// over 15 seconds. The earlier 10 seconds was sized for a companion that only read the keychain,
+// and left these tests failing or passing on which side of the limit the unpack happened to land.
+const startupTimeout = { timeout: 45_000 };
 const connectTimeout = { timeout: 20_000 };
 const buildDirectory = companionBuildDirectory(process.arch);
 const builtExecutablePath = join(buildDirectory, COMPANION_EXECUTABLE_NAME);
@@ -39,9 +38,14 @@ const installedSdkVersion: unknown = JSON.parse(
 const launchedCompanions: ChildProcess[] = [];
 const temporaryDirectories: string[] = [];
 
-beforeAll(() => {
+beforeAll(async () => {
   if (!existsSync(builtExecutablePath)) {
     throw new Error(`There is no companion build in ${buildDirectory}. Run pnpm test:companion, which builds one first.`);
+  }
+  // The companion no longer carries a Copilot runtime: it drives the Copilot CLI on this Mac, so
+  // these tests need one installed, as a person using the companion would have.
+  if ((await discoverCopilotCli()) === undefined) {
+    throw new Error("These tests need the GitHub Copilot CLI on this Mac. Install it with: brew install --cask copilot-cli");
   }
 });
 
@@ -90,14 +94,6 @@ describe("built companion", () => {
     expect(codesign(["--verify", "--strict", builtExecutablePath]).status).toBe(0);
   });
 
-  it("carries the Copilot runtime for this architecture, still signed by GitHub, where the companion looks for it", () => {
-    const runtimePath = bundledRuntimePath(buildDirectory, process.arch);
-    expect(statSync(runtimePath).mode & 0o111).toBe(0o111);
-    for (const path of [runtimePath, join(dirname(runtimePath), "runtime.node")]) {
-      expect(codesign(["--verify", "--strict", path]).status).toBe(0);
-      expect(codesign(["--display", "--verbose=2", path]).stderr).toContain(`TeamIdentifier=${GITHUB_TEAM_ID}`);
-    }
-  });
 
   it("carries an uninstall script, this project's license and notices for the third-party software in it", () => {
     const uninstallScriptPath = join(buildDirectory, UNINSTALL_SCRIPT_NAME);
@@ -111,7 +107,7 @@ describe("built companion", () => {
       existsSync(join(dirname(dirname(process.execPath)), "LICENSE")) ? "Node.js is licensed for use as follows:" : nodeLicenseUrl(process.version),
     );
     expect(notices).toContain(`\n@github/copilot-sdk ${String(installedSdkVersion)}\n`);
-    expect(notices).toContain(`\n@github/copilot-sdk-darwin-${process.arch} ${String(installedSdkVersion)}\n`);
+    expect(notices).not.toContain("@github/copilot-sdk-darwin-");
     expect(notices).toContain("\nvscode-jsonrpc ");
   });
 
@@ -122,16 +118,30 @@ describe("built companion", () => {
     expect(refused.stderr).toBe(REFUSAL_NOTICE);
   });
 
-  it("greets Chrome with the SDK version it was built with, without Node.js or even a PATH", async () => {
+  it("greets Chrome with the SDK version it was built with and the Copilot CLI it found, without Node.js or even a PATH", async () => {
     const home = temporaryDirectory("companion-home-");
     const { child, frames, exitCode } = launchCompanion(builtExecutablePath, { HOME: home });
     await vi.waitFor(
-      () => expect(frames).toEqual([{ type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion: installedSdkVersion, savedToken: false }]),
+      () =>
+        expect(frames).toEqual([
+          {
+            type: "hello",
+            protocolVersion: PROTOCOL_VERSION,
+            sdkVersion: installedSdkVersion,
+            savedToken: false,
+            runtime: "ready",
+            runtimeVersion: expect.stringMatching(/^\d+(\.\d+)*(-\d+)?$/),
+          },
+        ]),
       startupTimeout,
     );
     child.stdin.end();
     await expect(exitCode).resolves.toBe(0);
-    expect(readdirSync(home)).toEqual([]);
+    // Reading the Copilot CLI's version has it unpack its runtime into the companion's cache, and
+    // that is the only thing the companion puts in the home folder it was given.
+    expect(readdirSync(home)).toEqual(["Library"]);
+    expect(existsSync(companionInstallPaths(home).cacheDirectory)).toBe(true);
+    expect(existsSync(companionInstallPaths(home).applicationDirectory)).toBe(false);
   });
 
   it("ignores NODE_OPTIONS, which would otherwise let another program load code into it", () => {
@@ -149,7 +159,7 @@ describe("built companion", () => {
     expect(existsSync(markerPath)).toBe(false);
   });
 
-  it("connects from a copy elsewhere through its own SDK and Copilot runtime, which reject a fake PAT", async () => {
+  it("connects from a copy elsewhere through its own SDK and the installed Copilot CLI, which reject a fake PAT", async () => {
     const server = createServer((socket) => socket.destroy());
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
@@ -210,13 +220,13 @@ describe("installed companion", () => {
     const home = temporaryDirectory("companion-install-home-");
     const env = { ...process.env, HOME: home };
     expect(spawnSync(process.execPath, [installCliPath], { encoding: "utf8", env }).status).toBe(0);
-    const { applicationDirectory, companionDirectory, executablePath, hostManifestPath } = companionInstallPaths(home);
+    const { applicationDirectory, configPath, executablePath, hostManifestPath } = companionInstallPaths(home);
 
     expect(JSON.parse(readFileSync(hostManifestPath, "utf8"))).toMatchObject({ path: executablePath, allowed_origins: [EXTENSION_ORIGIN] });
     expect(realpathSync(executablePath)).not.toBe(realpathSync(builtExecutablePath));
     expect(statSync(executablePath).size).toBe(statSync(builtExecutablePath).size);
     expect(codesign(["--verify", "--strict", executablePath]).status).toBe(0);
-    expect(existsSync(bundledRuntimePath(companionDirectory, process.arch))).toBe(true);
+    expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual({ copilotCliPath: await discoverCopilotCli({ home }) });
 
     const { child, frames, exitCode } = launchCompanion(executablePath, { HOME: home });
     await vi.waitFor(() => expect(frames).toEqual([expect.objectContaining({ type: "hello", sdkVersion: installedSdkVersion })]), startupTimeout);

@@ -36,7 +36,7 @@ class FakePort implements NativePort {
   }
 }
 
-const hello = { type: "hello", protocolVersion: 3, sdkVersion: "1.0.14", savedToken: true };
+const hello = { type: "hello", protocolVersion: 4, sdkVersion: "1.0.14", savedToken: true, runtime: "ready", runtimeVersion: "1.0.89-3" };
 let port: FakePort;
 let events: BridgeEvent[];
 let connectedHostNames: string[];
@@ -73,7 +73,7 @@ describe("openCompanionBridge", () => {
     expect(events).toEqual([]);
 
     port.deliver(hello);
-    expect(events).toEqual([{ type: "ready", sdkVersion: "1.0.14", savedToken: true }]);
+    expect(events).toEqual([{ type: "ready", sdkVersion: "1.0.14", savedToken: true, runtime: "ready", runtimeVersion: "1.0.89-3" }]);
   });
 
   it.each([

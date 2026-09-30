@@ -14,6 +14,7 @@ import {
   pageCaptureErrorText,
   promptTooLongText,
   replyAuthorLabel,
+  runtimeStatusText,
   SAVED_TOKEN_REJECTED_TEXT,
   SEND_ERROR_TEXT,
   STATUS_TEXT,
@@ -27,7 +28,7 @@ import { isFineGrainedPersonalAccessToken, MAX_PROMPT_LENGTH } from "../protocol
 import type { ErrorCode, ModelSummary, PageContext } from "../protocol/messages.ts";
 import "./style.css";
 
-type PanelPhase = "detecting" | "unavailable" | "ready" | "connecting" | "connected" | "sending";
+type PanelPhase = "detecting" | "unavailable" | "no_runtime" | "ready" | "connecting" | "connected" | "sending";
 type PanelView = "none" | "setup" | "chat";
 type SessionError = Extract<SessionMessage, { type: "error" }>;
 
@@ -131,9 +132,20 @@ function startConnecting({ withSavedToken }: { withSavedToken: boolean }) {
 
 function handleBridgeEvent(event: BridgeEvent) {
   switch (event.type) {
-    case "ready":
-      phase = "ready";
+    case "ready": {
+      // A companion that cannot reach a usable Copilot CLI stays connected but has nothing to
+      // connect with, so the panel explains that instead of taking a PAT it could not use. With a
+      // PAT already saved it keeps the chat view, which is what offers Sign out to delete it.
+      const runtimeNotice = runtimeStatusText(event.runtime);
       status.textContent = "";
+      if (runtimeNotice !== undefined) {
+        phase = "no_runtime";
+        view = event.savedToken ? "chat" : "none";
+        showError(runtimeNotice, event.runtime);
+        focusAfterUpdate = tryAgainButton;
+        break;
+      }
+      phase = "ready";
       if (event.savedToken) {
         view = "chat";
         connectWithSavedToken();
@@ -142,6 +154,7 @@ function handleBridgeEvent(event: BridgeEvent) {
         focusAfterUpdate = pat;
       }
       break;
+    }
     case "message":
       handleSessionMessage(event.message);
       break;
@@ -270,7 +283,10 @@ function hideError() {
 
 function canTryAgain() {
   const retryable =
-    phase === "unavailable" || (phase === "ready" && view === "chat") || (phase === "connected" && modelsById.size === 0);
+    phase === "unavailable" ||
+    phase === "no_runtime" ||
+    (phase === "ready" && view === "chat") ||
+    (phase === "connected" && modelsById.size === 0);
   // Try again restarts the companion, which would drop a PAT that is not saved yet or race a pending sign-out.
   return retryable && !unsavedToken && !signOutPending;
 }

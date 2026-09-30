@@ -3,6 +3,7 @@ import { GatewayFailure } from "../../src/companion/gateway.ts";
 import type { ConnectedAccount, CopilotGateway, TurnEvent, TurnRequest } from "../../src/companion/gateway.ts";
 import type { CredentialStore } from "../../src/companion/keychain.ts";
 import { ABORT_TIMEOUT_MS, createCompanionService } from "../../src/companion/service.ts";
+import type { RuntimeStatus } from "../../src/companion/runtime.ts";
 import { CONNECT_TIMEOUT_MS, MAX_OUTPUT_LENGTH, TURN_TIMEOUT_MS } from "../../src/protocol/messages.ts";
 import type { CompanionMessage, TurnOutcome } from "../../src/protocol/messages.ts";
 
@@ -26,6 +27,16 @@ function deferred<Value>() {
   });
   return { promise, resolve, reject };
 }
+
+const READY_RUNTIME = { state: "ready", path: "/opt/homebrew/bin/copilot", version: "1.0.89-3" } as const;
+const MISSING_RUNTIME = { state: "missing" } as const;
+const UNSUPPORTED_RUNTIME = { state: "unsupported", path: "/opt/homebrew/bin/copilot" } as const;
+
+type StartServiceOptions = {
+  store?: ReturnType<typeof createFakeStore>;
+  runtime?: RuntimeStatus;
+  resolveRuntime?: () => Promise<RuntimeStatus>;
+};
 
 function itemAt<Item>(items: readonly Item[], index: number): Item {
   const item = items[index];
@@ -71,16 +82,19 @@ function createFakeStore(initialToken?: string) {
   } satisfies CredentialStore;
 }
 
-function startService({ store = createFakeStore() } = {}) {
+function startService({ store = createFakeStore(), runtime = READY_RUNTIME, resolveRuntime }: StartServiceOptions = {}) {
   const gateways: FakeGateway[] = [];
   const emitted: CompanionMessage[] = [];
   const onRuntimeStuck = vi.fn();
+  const resolve = resolveRuntime ?? (async () => runtime);
   const service = createCompanionService({
     createGateway: () => {
       const fake = createFakeGateway();
       gateways.push(fake);
       return fake.gateway;
     },
+    runtime,
+    resolveRuntime: resolve,
     store,
     emit: (message) => emitted.push(message),
     onRuntimeStuck,
@@ -112,6 +126,146 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
+
+// The companion looks for the Copilot CLI once at startup. A usable one is taken at its word, but
+// a startup lookup that came up short is retried on connect, so installing the CLI and connecting
+// works without restarting the companion.
+describe("locating the Copilot CLI on connect", () => {
+  it("starts the Copilot CLI the startup lookup found, without looking again", () => {
+    const resolveRuntime = vi.fn(async () => READY_RUNTIME);
+    const { service, gateways } = startService({ runtime: READY_RUNTIME, resolveRuntime });
+
+    service.handle({ type: "connect", token, remember: false });
+    expect(gateways).toHaveLength(1);
+    expect(resolveRuntime).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no Copilot CLI is installed", MISSING_RUNTIME, "runtime_not_found"],
+    ["what was found is not the Copilot CLI", UNSUPPORTED_RUNTIME, "runtime_unsupported"],
+  ] as const)("reports %s without starting anything, and allows another attempt", async (_description, runtime, code) => {
+    const { service, gateways, emitted } = startService({ runtime, resolveRuntime: async () => runtime });
+
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    expect(emitted).toEqual([{ type: "error", stage: "connect", code }]);
+    expect(gateways).toHaveLength(0);
+
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    expect(emitted).toHaveLength(2);
+  });
+
+  it("connects once the Copilot CLI is installed, without restarting the companion", async () => {
+    let runtime: RuntimeStatus = MISSING_RUNTIME;
+    const { service, gateways, emitted } = startService({ runtime: MISSING_RUNTIME, resolveRuntime: async () => runtime });
+
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    expect(emitted).toEqual([{ type: "error", stage: "connect", code: "runtime_not_found" }]);
+
+    runtime = READY_RUNTIME;
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    itemAt(gateways, 0).connection.resolve(account);
+    await settle();
+    expect(emitted[1]).toEqual({ type: "connected", login: "octocat", models: account.models });
+  });
+
+  it("stops looking again once it has found a usable Copilot CLI", async () => {
+    let runtime: RuntimeStatus = MISSING_RUNTIME;
+    const resolveRuntime = vi.fn(async () => runtime);
+    const { service, gateways } = startService({ runtime: MISSING_RUNTIME, resolveRuntime });
+
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    runtime = READY_RUNTIME;
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    itemAt(gateways, 0).connection.resolve(account);
+    await settle();
+    expect(resolveRuntime).toHaveBeenCalledTimes(2);
+
+    service.handle({ type: "new_chat" });
+    expect(resolveRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a lookup that fails as no Copilot CLI found", async () => {
+    const { service, gateways, emitted } = startService({
+      runtime: MISSING_RUNTIME,
+      resolveRuntime: () => Promise.reject(new Error("readdir failed")),
+    });
+
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    expect(emitted).toEqual([{ type: "error", stage: "connect", code: "runtime_not_found" }]);
+    expect(gateways).toHaveLength(0);
+  });
+
+  it("gives up on a lookup that outlasts the connect deadline, and ignores its late answer", async () => {
+    const lookup = deferred<RuntimeStatus>();
+    const { service, gateways, emitted } = startService({
+      runtime: MISSING_RUNTIME,
+      resolveRuntime: () => lookup.promise,
+    });
+
+    service.handle({ type: "connect", token, remember: false });
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS);
+    expect(emitted).toEqual([{ type: "error", stage: "connect", code: "timeout" }]);
+
+    lookup.resolve(READY_RUNTIME);
+    await settle();
+    expect(gateways).toHaveLength(0);
+    expect(emitted).toHaveLength(1);
+  });
+
+  // A late answer must not be remembered either. Recording it would let the next connection skip
+  // the lookup and start a Copilot CLI that a newer lookup had already found to be gone.
+  it("does not remember what a lookup that outlasted its connection found", async () => {
+    const lookups = [deferred<RuntimeStatus>(), deferred<RuntimeStatus>()];
+    let started = 0;
+    const { service, gateways, emitted } = startService({
+      runtime: MISSING_RUNTIME,
+      resolveRuntime: () => itemAt(lookups, started++).promise,
+    });
+
+    service.handle({ type: "connect", token, remember: false });
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS);
+    expect(emitted).toEqual([{ type: "error", stage: "connect", code: "timeout" }]);
+
+    // The abandoned lookup now reports a Copilot CLI, after its connection has already given up.
+    lookups[0]?.resolve(READY_RUNTIME);
+    await settle();
+
+    // The next connection must look again rather than trusting that stale answer.
+    service.handle({ type: "connect", token, remember: false });
+    await settle();
+    expect(started).toBe(2);
+    expect(gateways).toHaveLength(0);
+
+    lookups[1]?.resolve(MISSING_RUNTIME);
+    await settle();
+    expect(emitted[1]).toEqual({ type: "error", stage: "connect", code: "runtime_not_found" });
+    expect(gateways).toHaveLength(0);
+  });
+
+  it("does not start the Copilot CLI it finds when the companion shut down while looking", async () => {
+    const lookup = deferred<RuntimeStatus>();
+    const { service, gateways, emitted } = startService({
+      runtime: MISSING_RUNTIME,
+      resolveRuntime: () => lookup.promise,
+    });
+
+    service.handle({ type: "connect", token, remember: false });
+    const stopped = service.shutdown();
+    lookup.resolve(READY_RUNTIME);
+    await settle();
+    await stopped;
+    expect(gateways).toHaveLength(0);
+    expect(emitted).toEqual([]);
+  });
+});
+
 
 describe("connect", () => {
   it("connects with the panel's token and reports the account and enabled models", async () => {
@@ -158,6 +312,8 @@ describe("connect", () => {
       createGateway: () => {
         throw new Error("mkdtemp failed");
       },
+      runtime: READY_RUNTIME,
+      resolveRuntime: async () => READY_RUNTIME,
       store: createFakeStore(),
       emit: (message) => emitted.push(message),
       onRuntimeStuck: () => {},
@@ -297,11 +453,11 @@ describe("saved PAT", () => {
     service.handle({ type: "connect_saved" });
     await settle();
     expect(emitted).toEqual([{ type: "error", stage: "connect", code }]);
-    expect(itemAt(gateways, 0).gateway.connect).not.toHaveBeenCalled();
-    expect(itemAt(gateways, 0).gateway.close).toHaveBeenCalledOnce();
+    // The Copilot CLI is never started for a PAT that could not be read.
+    expect(gateways).toHaveLength(0);
 
     service.handle({ type: "connect", token, remember: false });
-    expect(gateways).toHaveLength(2);
+    expect(gateways).toHaveLength(1);
   });
 
   it("counts reading the saved PAT toward the connect deadline", async () => {
@@ -315,7 +471,7 @@ describe("saved PAT", () => {
 
     reading.resolve(savedToken);
     await settle();
-    expect(itemAt(gateways, 0).gateway.connect).not.toHaveBeenCalled();
+    expect(gateways).toHaveLength(0);
     expect(emitted).toHaveLength(1);
   });
 

@@ -1,6 +1,7 @@
 import { CONNECT_FAILURE_CODES, GatewayFailure, TURN_FAILURE_CODES } from "./gateway.ts";
-import type { ConnectFailureCode, CopilotGateway, Turn, TurnEvent, TurnFailureCode } from "./gateway.ts";
+import type { ConnectedAccount, ConnectFailureCode, CopilotGateway, Turn, TurnEvent, TurnFailureCode } from "./gateway.ts";
 import type { CredentialStore } from "./keychain.ts";
+import type { RuntimeStatus } from "./runtime.ts";
 import { CONNECT_TIMEOUT_MS, MAX_OUTPUT_LENGTH, TURN_TIMEOUT_MS } from "../protocol/messages.ts";
 import type { CompanionMessage, ErrorCode, PageContext, PanelMessage } from "../protocol/messages.ts";
 import { composePrompt } from "./page-prompt.ts";
@@ -8,13 +9,21 @@ import { composePrompt } from "./page-prompt.ts";
 export const ABORT_TIMEOUT_MS = 5_000;
 
 type CompanionServiceOptions = {
-  createGateway: () => CopilotGateway;
+  createGateway: (runtimePath: string) => CopilotGateway;
+  // What the companion found when it started. A usable Copilot CLI is taken at its word, so an
+  // ordinary connection costs no extra lookup.
+  runtime: RuntimeStatus;
+  // Consulted again only when the startup lookup came up short, so installing the Copilot CLI and
+  // connecting works without restarting the companion.
+  resolveRuntime: () => Promise<RuntimeStatus>;
   store: CredentialStore;
   emit: (message: CompanionMessage) => void;
   onRuntimeStuck: () => void;
 };
 
-type Connecting = { phase: "connecting"; gateway: CopilotGateway; saveTokenOnSuccess: boolean };
+// The gateway arrives only once the Copilot CLI has been located, so a connection that is still
+// resolving has none to close.
+type Connecting = { phase: "connecting"; gateway?: CopilotGateway; saveTokenOnSuccess: boolean };
 type Connected = { phase: "connected"; gateway: CopilotGateway; modelIds: ReadonlySet<string> };
 type Sending = {
   phase: "sending";
@@ -30,8 +39,16 @@ type Closed = { phase: "closed"; cleanup: Promise<void> };
 type ServiceState = { phase: "ready" } | Connecting | Connected | Sending | Stopping | Closing | Closed;
 type AbandonReason = "output_limit" | "timeout";
 
-export function createCompanionService({ createGateway, store, emit, onRuntimeStuck }: CompanionServiceOptions) {
+export function createCompanionService({
+  createGateway,
+  runtime,
+  resolveRuntime,
+  store,
+  emit,
+  onRuntimeStuck,
+}: CompanionServiceOptions) {
   let state: ServiceState = { phase: "ready" };
+  let knownRuntime = runtime;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   let pendingCredentialTasks: Promise<unknown> = Promise.resolve();
 
@@ -46,7 +63,7 @@ export function createCompanionService({ createGateway, store, emit, onRuntimeSt
 
   function connect(token: string, remember: boolean) {
     const connecting = startConnecting({ saveTokenOnSuccess: remember });
-    if (connecting) connectGateway(connecting, token);
+    if (connecting) openGateway(connecting, token);
   }
 
   function connectWithSavedToken() {
@@ -56,7 +73,7 @@ export function createCompanionService({ createGateway, store, emit, onRuntimeSt
       (savedToken) => {
         if (state !== connecting) return;
         if (savedToken === undefined) failConnect(connecting, "no_saved_token");
-        else connectGateway(connecting, savedToken);
+        else openGateway(connecting, savedToken);
       },
       () => failConnect(connecting, "keychain_read_failed"),
     );
@@ -72,22 +89,47 @@ export function createCompanionService({ createGateway, store, emit, onRuntimeSt
       return undefined;
     }
 
-    let gateway: CopilotGateway;
-    try {
-      gateway = createGateway();
-    } catch {
-      emit(connectError("sdk_start_failed"));
-      return undefined;
-    }
-    const connecting: Connecting = { phase: "connecting", gateway, saveTokenOnSuccess };
+    const connecting: Connecting = { phase: "connecting", saveTokenOnSuccess };
     state = connecting;
     startDeadline(CONNECT_TIMEOUT_MS, () => failConnect(connecting, "timeout"));
     return connecting;
   }
 
-  function connectGateway(connecting: Connecting, token: string) {
-    const { gateway } = connecting;
-    gateway.connect(token).then(
+  function openGateway(connecting: Connecting, token: string) {
+    if (knownRuntime.state === "ready") return startGateway(connecting, knownRuntime.path, token);
+    void resolveRuntime().then(
+      (found) => {
+        // A lookup that outlasted its connection is stale: a newer attempt may already have looked
+        // again and found something else. Recording it would let the next connection start a path
+        // that no longer exists, so an abandoned lookup is dropped and the next one looks afresh.
+        if (state !== connecting) return;
+        knownRuntime = found;
+        if (found.state === "ready") startGateway(connecting, found.path, token);
+        else failConnect(connecting, found.state === "missing" ? "runtime_not_found" : "runtime_unsupported");
+      },
+      () => failConnect(connecting, "runtime_not_found"),
+    );
+  }
+
+  function startGateway(connecting: Connecting, runtimePath: string, token: string) {
+    let gateway: CopilotGateway;
+    try {
+      gateway = createGateway(runtimePath);
+    } catch {
+      return failConnect(connecting, "sdk_start_failed");
+    }
+    connecting.gateway = gateway;
+    connectGateway(connecting, gateway, token);
+  }
+
+  function connectGateway(connecting: Connecting, gateway: CopilotGateway, token: string) {
+    let connected: Promise<ConnectedAccount>;
+    try {
+      connected = gateway.connect(token);
+    } catch (error) {
+      return failConnect(connecting, connectFailureCode(error));
+    }
+    connected.then(
       ({ login, models }) => {
         if (state !== connecting) return;
         clearDeadline();
@@ -127,7 +169,12 @@ export function createCompanionService({ createGateway, store, emit, onRuntimeSt
   function failConnect(connecting: Connecting, code: ErrorCode<"connect">) {
     if (state !== connecting) return;
     clearDeadline();
-    const closing: Closing = { phase: "closing", cleanup: closeQuietly(connecting.gateway) };
+    const { gateway } = connecting;
+    if (gateway === undefined) {
+      state = { phase: "ready" };
+      return emit(connectError(code));
+    }
+    const closing: Closing = { phase: "closing", cleanup: closeQuietly(gateway) };
     state = closing;
     void closing.cleanup.then(() => {
       if (state !== closing) return;
@@ -260,6 +307,7 @@ export function createCompanionService({ createGateway, store, emit, onRuntimeSt
 function cleanupFor(state: Exclude<ServiceState, Closed>): Promise<void> {
   if (state.phase === "ready") return Promise.resolve();
   if (state.phase === "closing") return state.cleanup;
+  if (state.gateway === undefined) return Promise.resolve();
   return closeQuietly(state.gateway);
 }
 

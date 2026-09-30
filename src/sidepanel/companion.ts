@@ -1,6 +1,6 @@
 import { HOST_NAME } from "../protocol/identity.ts";
 import { parseCompanionMessage, PROTOCOL_VERSION } from "../protocol/messages.ts";
-import type { CompanionMessage, PanelMessage } from "../protocol/messages.ts";
+import type { CompanionMessage, PanelMessage, RuntimeState } from "../protocol/messages.ts";
 
 export type NativePort = {
   postMessage: (message: unknown) => void;
@@ -19,7 +19,7 @@ export type BridgeFailure =
 export type SessionMessage = Exclude<CompanionMessage, { type: "hello" } | { stage: "protocol" }>;
 
 export type BridgeEvent =
-  | { type: "ready"; sdkVersion: string; savedToken: boolean }
+  | { type: "ready"; sdkVersion: string; savedToken: boolean; runtime: RuntimeState; runtimeVersion?: string }
   | { type: "message"; message: SessionMessage }
   | { type: "closed"; failure: BridgeFailure };
 
@@ -58,7 +58,12 @@ export function openCompanionBridge({ connectNative, readLastError, onEvent }: C
     if (phase === "starting") {
       if (message.type !== "hello" || message.protocolVersion !== PROTOCOL_VERSION) return disconnectForProtocolViolation();
       phase = "ready";
-      return onEvent({ type: "ready", sdkVersion: message.sdkVersion, savedToken: message.savedToken });
+      const { sdkVersion, savedToken, runtime, runtimeVersion } = message;
+      return onEvent(
+        runtimeVersion === undefined
+          ? { type: "ready", sdkVersion, savedToken, runtime }
+          : { type: "ready", sdkVersion, savedToken, runtime, runtimeVersion },
+      );
     }
     if (!isSessionMessage(message)) return disconnectForProtocolViolation();
     onEvent({ type: "message", message });

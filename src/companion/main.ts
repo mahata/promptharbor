@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname } from "node:path";
 import { getAsset, isSea } from "node:sea";
-import { createTerminalConfirm } from "./install.ts";
+import { companionInstallPaths, createTerminalConfirm } from "./install.ts";
 import { createKeychainStore } from "./keychain.ts";
-import { BUILD_INFO_ASSET, bundledRuntimePath } from "./layout.ts";
+import { BUILD_INFO_ASSET, copilotCliCacheDirectory } from "./layout.ts";
+import { describeCopilotRuntime } from "./runtime.ts";
 import { runCompanion } from "./run.ts";
 import { createSdkGateway } from "./sdk-gateway.ts";
 import { isSelfInstallerCommand, runSelfInstaller } from "./self-install.ts";
@@ -12,9 +12,10 @@ import { isBoundedField } from "../protocol/messages.ts";
 
 const UNKNOWN_SDK_VERSION = "unknown";
 
-// A built companion is a single executable application with the Copilot runtime beside it.
-// Run from a checkout, the SDK finds its runtime in node_modules instead, and installing is
-// left to pnpm companion:install, because only a built companion can copy itself.
+// A built companion is a single executable application holding Node.js and the companion's code.
+// Either way it drives the Copilot CLI the user installed, never a bundled runtime. Installing is
+// left to pnpm companion:install when run from a checkout, because only a built companion can copy
+// itself.
 const isBuiltCompanion = isSea();
 const args = process.argv.slice(2);
 
@@ -32,13 +33,16 @@ function installOrUninstall() {
 }
 
 async function serveChrome() {
-  const runtimePath = isBuiltCompanion ? bundledRuntimePath(dirname(process.execPath), process.arch) : undefined;
+  const home = homedir();
+  const { configPath } = companionInstallPaths(home);
+  const cacheDirectory = copilotCliCacheDirectory(home);
   const companion = runCompanion({
     stdin: process.stdin,
     stdout: process.stdout,
     stderr: process.stderr,
     args,
-    createGateway: () => createSdkGateway({ runtimePath }),
+    createGateway: (runtimePath) => createSdkGateway({ runtimePath, cacheDirectory }),
+    resolveRuntime: () => describeCopilotRuntime({ configPath, home, cacheDirectory }),
     store: createKeychainStore(),
     sdkVersion: await readSdkVersion(isBuiltCompanion ? readBuiltSdkVersion : readCheckoutSdkVersion),
   });
