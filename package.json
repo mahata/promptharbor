@@ -22,11 +22,11 @@
   "devDependencies": {
     "@playwright/test": "^1.56.0",
     "@types/chrome": "^0.3.0",
-    "@types/node": "^26.0.0",
-    "rolldown": "^1.2.8",
+    "@types/node": "^26.6.3",
+    "rolldown": "^1.2.11",
     "typescript": "^7.0.2",
-    "vite": "^8.3.0",
-    "vitest": "^5.0.1"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   },
   "dependencies": {
     "@github/copilot-sdk": "^1.0.14",
