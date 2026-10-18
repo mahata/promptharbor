@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-companion/
+dist-webstore/
 test-results/
 playwright-report/
 .env

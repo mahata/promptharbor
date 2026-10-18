@@ -590,6 +590,39 @@ The code is organized as:
   Keychain store, frame codec, page prompt, Copilot CLI lookup, version check, recorded
   configuration, build, license notices, install layout, installer and installer package.
 - `src/protocol/`: the messages and extension identity shared by both sides.
+- `src/webstore/`: the Chrome Web Store package of the built extension.
+
+## Chrome Web Store
+
+```sh
+pnpm webstore:package
+```
+
+`pnpm webstore:package` builds the extension and zips `dist/` into
+`dist-webstore/prompt-harbor-<version>.zip`, with `manifest.json` at the root of the archive,
+ready to upload in the
+[Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole). The
+archive's manifest leaves out `key`, because the store refuses a manifest that has one, while
+`dist/` keeps it for loading unpacked. Raise `version` in `public/manifest.json` before each
+upload, because the store accepts only a higher version than the last one.
+
+The store signs the extension with a key of its own, which sets the published extension's ID.
+The private key behind the manifest's current `key` was not kept, so the store cannot give the
+extension the ID `hdmfkhdfamhcfglofebjnoepkbbbihkg`, and the companion would refuse the
+published extension. Before submitting it for review the first time:
+
+1. Upload the archive as a new item, without submitting it.
+2. On the item's **Package** tab, choose **View public key**. Put the key in
+   `public/manifest.json` as `key`, as one line without the `BEGIN` and `END` lines, and put
+   the item ID in `src/protocol/identity.ts` as `EXTENSION_ID`. `pnpm test` checks that they
+   match.
+3. Build and install the companion again, so that Chrome lets the store's ID start it.
+   Loading `dist/` unpacked then gets the same ID as the published extension.
+
+The **Privacy** tab asks for a privacy policy. Link to [PRIVACY.md](PRIVACY.md) on GitHub.
+The companion package is not signed or notarized yet, and macOS refuses to open one downloaded
+through a browser, so until it is, people who install the extension from the store have no
+simple way to get the companion.
 
 ## Evidence
 
