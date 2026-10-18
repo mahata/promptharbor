@@ -20,12 +20,15 @@
       </div>
 
       <form id="auth-form" class="auth" hidden>
-        <label for="pat">Copilot needs a fine-grained PAT with the Copilot Requests permission to sign in as you.</label>
+        <label for="pat">Prompt Harbor needs a fine-grained PAT with the Copilot Requests permission to use GitHub Copilot as you.</label>
         <div class="row">
           <input id="pat" type="password" placeholder="github_pat_…" autocomplete="off" spellcheck="false"
-            autocapitalize="off" maxlength="511" disabled>
+            autocapitalize="off" maxlength="511" aria-describedby="pat-disclosure" disabled>
           <button id="connect" type="submit" disabled>Connect</button>
         </div>
+        <p id="pat-disclosure" class="auth-note">Connecting sends this PAT, and then your prompts and any pages you include,
+          to GitHub through the companion and the GitHub Copilot CLI on this Mac. Once GitHub accepts the PAT, the
+          companion saves it in your macOS login keychain until you sign out.</p>
       </form>
 
       <section id="chat" class="chat" aria-label="Chat" hidden>

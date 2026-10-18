@@ -52,14 +52,14 @@ export const NOT_FINE_GRAINED_PAT = {
 
 export const PAGE_CAPTURE_ERROR_TEXT: Record<PageCaptureFailure, string> = {
   page_access_needed:
-    "Chrome has not given Copilot access to this tab, so nothing was sent. Click the extension's toolbar icon " +
+    "Chrome has not given Prompt Harbor access to this tab, so nothing was sent. Click the extension's toolbar icon " +
     "while this tab is showing, then send again. Access ends when the tab goes to another site. " +
     "For file:// pages, also turn on Allow access to file URLs for this extension in chrome://extensions.",
   page_restricted:
     "Chrome never lets extensions read this page, so nothing was sent. " +
     "This covers chrome:// pages, the New Tab page, the Chrome Web Store, other extensions and sites blocked by policy.",
   page_error_page: "This tab is showing an error page, so nothing was sent. Reload the page, then send again.",
-  page_unreadable: "Copilot could not read this tab, so nothing was sent.",
+  page_unreadable: "Prompt Harbor could not read this tab, so nothing was sent.",
   page_timeout: `The tab did not respond within ${PAGE_CAPTURE_TIMEOUT_MS / 1000} seconds, so nothing was sent.`,
 };
 

@@ -221,10 +221,11 @@ does not migrate or remove those entries.
 
 - **Open:** click the toolbar icon, or press Ctrl+Shift+H on Windows/Linux or ⌘+Shift+H
   on macOS. Change the shortcut from `chrome://extensions/shortcuts`.
-- **Sign in:** the first time, the panel shows only a PAT field. Paste a fine-grained PAT
-  and choose **Connect**. Once GitHub accepts it, the companion saves it in your macOS
-  login keychain, and from then on the panel opens straight into the chat. **Sign out**
-  deletes the saved PAT and asks for a new one.
+- **Sign in:** the first time, the panel shows only a PAT field, with a note on what
+  connecting sends to GitHub. Paste a fine-grained PAT and choose **Connect**. Once GitHub
+  accepts it, the companion saves it in your macOS login keychain, and from then on the
+  panel opens straight into the chat. **Sign out** deletes the saved PAT and asks for a new
+  one.
 - **Chat:** write a prompt of up to 32,768 characters and choose **Send**, or press Enter,
   ⌘ Enter or Ctrl Enter. Shift Enter starts a new line. While an input method is composing,
   such as when converting to kanji, Enter only confirms the conversion. The menu next to

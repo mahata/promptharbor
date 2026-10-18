@@ -25,7 +25,7 @@
         "default": "Ctrl+Shift+H",
         "mac": "Command+Shift+H"
       },
-      "description": "Open Copilot in Chrome"
+      "description": "Open Prompt Harbor"
     }
   },
   "icons": {

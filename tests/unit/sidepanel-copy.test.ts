@@ -39,6 +39,12 @@ describe("side panel copy", () => {
     );
   });
 
+  it("names Prompt Harbor, not Copilot, as what reads a tab", () => {
+    expect(PAGE_CAPTURE_ERROR_TEXT.page_access_needed).toContain("Chrome has not given Prompt Harbor access to this tab");
+    expect(PAGE_CAPTURE_ERROR_TEXT.page_unreadable).toBe("Prompt Harbor could not read this tab, so nothing was sent.");
+    for (const text of Object.values(PAGE_CAPTURE_ERROR_TEXT)) expect(text).not.toContain("Copilot");
+  });
+
   it("tells the user how to start over when the conversation outgrows the model's context window", () => {
     expect(SEND_ERROR_TEXT.context_limit).toContain("context window");
     expect(SEND_ERROR_TEXT.context_limit).toContain("New chat");

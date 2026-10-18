@@ -125,7 +125,11 @@ function quoteForShell(value: string) {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-const PAT_EXPLANATION = "Copilot needs a fine-grained PAT with the Copilot Requests permission to sign in as you.";
+const PAT_EXPLANATION = "Prompt Harbor needs a fine-grained PAT with the Copilot Requests permission to use GitHub Copilot as you.";
+const PAT_DISCLOSURE =
+  "Connecting sends this PAT, and then your prompts and any pages you include, to GitHub through the companion " +
+  "and the GitHub Copilot CLI on this Mac. Once GitHub accepts the PAT, the companion saves it in your macOS " +
+  "login keychain until you sign out.";
 
 function patField(page: Page) {
   return page.getByLabel(PAT_EXPLANATION);
@@ -258,8 +262,9 @@ test("connects with the saved PAT once Try again finds the companion", async () 
 test("asks a new user only for a PAT, then chats with the cheapest model preselected and renders both sides as inert text", async () => {
   const { page, networkRequests, dialogs } = await openPanel();
   await expect(patField(page)).toBeFocused();
-  await expect(page.locator("main")).toHaveText(`${PAT_EXPLANATION} Connect`, { useInnerText: true });
-  await expect(page.locator("p:visible")).toHaveCount(0);
+  await expect(page.locator("main")).toHaveText(`${PAT_EXPLANATION} Connect ${PAT_DISCLOSURE}`, { useInnerText: true });
+  await expect(page.locator("p:visible")).toHaveText([PAT_DISCLOSURE]);
+  await expect(patField(page)).toHaveAccessibleDescription(PAT_DISCLOSURE);
   const connectButton = button(page, "Connect");
   await expect(connectButton).toBeDisabled();
   await patField(page).fill(approvedToken);
@@ -872,7 +877,7 @@ test("asks only for the side panel, native messaging and on-click page access, a
   expect(manifest.commands).toEqual({
     _execute_action: {
       suggested_key: { default: "Ctrl+Shift+H", mac: "Command+Shift+H" },
-      description: "Open Copilot in Chrome",
+      description: "Open Prompt Harbor",
     },
   });
   expect(manifest.host_permissions).toBeUndefined();
