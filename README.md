@@ -337,6 +337,9 @@ account. It does not mean approval to distribute this or to offer it to other pe
 
 ## Boundaries
 
+[PRIVACY.md](PRIVACY.md) is the privacy policy, which a Chrome Web Store listing links to.
+This section gives the detail behind it.
+
 The extension:
 
 - Requests only `sidePanel`, `nativeMessaging`, `activeTab` and `scripting`. It has no host
