@@ -617,8 +617,9 @@ published extension. Before submitting it for review the first time:
    `public/manifest.json` as `key`, as one line without the `BEGIN` and `END` lines, and put
    the item ID in `src/protocol/identity.ts` as `EXTENSION_ID`. `pnpm test` checks that they
    match.
-3. Build and install the companion again, so that Chrome lets the store's ID start it.
-   Loading `dist/` unpacked then gets the same ID as the published extension.
+3. Run `pnpm build` to regenerate `dist/` with the store's key, then build and install the
+   companion again so Chrome lets the store's ID start it. Loading the rebuilt `dist/`
+   unpacked then gets the same ID as the published extension.
 
 The **Privacy** tab asks for a privacy policy. Link to [PRIVACY.md](PRIVACY.md) on GitHub.
 The companion package is not signed or notarized yet, and macOS refuses to open one downloaded
