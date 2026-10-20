@@ -17,7 +17,8 @@
     "companion:build": "node src/companion/build-cli.ts",
     "companion:package": "pnpm companion:build && node src/companion/package-cli.ts",
     "companion:install": "pnpm companion:build && node src/companion/install-cli.ts",
-    "companion:uninstall": "node src/companion/install-cli.ts --uninstall"
+    "companion:uninstall": "node src/companion/install-cli.ts --uninstall",
+    "webstore:package": "pnpm build && node src/webstore/package-cli.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",

@@ -70,6 +70,7 @@ button.quiet:disabled { background: transparent; opacity: 0.6; }
 .row { display: flex; gap: 8px; }
 .row > input, .row > select { flex: 1; min-width: 0; }
 .chat-actions { display: flex; justify-content: flex-end; gap: 4px; margin: -8px -8px 6px; }
+.auth-note { margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
 .notice > * { margin-bottom: 12px; }
 .notice > :empty { margin-bottom: 0; }
 .status { color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
