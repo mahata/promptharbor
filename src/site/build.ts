@@ -6,6 +6,7 @@ import type { Token, Tokens } from "marked";
 
 export const PRIVACY_PAGE_PATH = "privacy/index.html";
 const ALLOWED_LINK_PROTOCOLS = new Set(["https:", "mailto:"]);
+const MAX_EXCERPT_LENGTH = 80;
 const SUCCESS = 0;
 const FAILURE = 1;
 
@@ -62,9 +63,8 @@ export async function runSiteBuilder({ policyPath, outputDirectory, output }: Si
 
 export function renderPrivacyPage(markdown: string) {
   const tokens = Lexer.lex(markdown, { gfm: true });
-  const title = pageTitle(tokens);
-  refuseRelativeLinks(tokens);
-  return pageDocument(title, Parser.parse(tokens, { gfm: true }));
+  refuseUncheckableContent(tokens);
+  return pageDocument(pageTitle(tokens), Parser.parse(tokens, { gfm: true }));
 }
 
 function pageDocument(title: string, body: string) {
@@ -106,8 +106,6 @@ function titleText(tokens: readonly Token[]): string {
         case "escape":
         case "codespan":
           return escapeHtml(token.text, { keepEntities: false });
-        case "html":
-          return "";
         default:
           return "tokens" in token && token.tokens ? titleText(token.tokens) : "";
       }
@@ -116,9 +114,15 @@ function titleText(tokens: readonly Token[]): string {
 }
 
 // The same file is read on GitHub and published on GitHub Pages, and a relative link cannot work
-// in both places.
-function refuseRelativeLinks(tokens: Token[]) {
+// in both places. Raw HTML would reach the page as written, so its links would escape this check.
+function refuseUncheckableContent(tokens: Token[]) {
   marked.walkTokens(tokens, (token) => {
+    if (token.type === "html") {
+      throw new SiteBuildError(
+        `The privacy policy contains raw HTML, ${JSON.stringify(excerpt(token.raw))}. Write it in Markdown instead, ` +
+          "because the build checks links only in Markdown.",
+      );
+    }
     if (token.type !== "link" && token.type !== "image") return;
     const { href } = token as Tokens.Link | Tokens.Image;
     if (URL.canParse(href) && ALLOWED_LINK_PROTOCOLS.has(new URL(href).protocol)) return;
@@ -136,6 +140,11 @@ async function readPolicy(policyPath: string) {
     if (!isMissingFileError(error)) throw error;
     throw new SiteBuildError(`No privacy policy was found at ${policyPath}.`);
   }
+}
+
+function excerpt(raw: string) {
+  const firstLine = raw.trim().split("\n", 1)[0] ?? "";
+  return firstLine.length > MAX_EXCERPT_LENGTH ? `${firstLine.slice(0, MAX_EXCERPT_LENGTH)}…` : firstLine;
 }
 
 function escapeHtml(text: string, { keepEntities }: { keepEntities: boolean }) {

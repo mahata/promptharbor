@@ -91,6 +91,35 @@ describe("privacy policy page", () => {
     expect(() => renderPrivacyPage("# Policy\n\n![Data flow](data-flow.png)\n")).toThrow('"data-flow.png"');
   });
 
+  it("refuses a raw HTML link, which would otherwise skip the link check, and names it", () => {
+    expect(() => renderPrivacyPage('# Policy\n\nSee <a href="README.md">README</a>.\n')).toThrow(
+      `raw HTML, ${JSON.stringify('<a href="README.md">')}`,
+    );
+  });
+
+  it.each([
+    ["an HTML block", '<p><a href="README.md">README</a></p>'],
+    ["an image tag in a list", '- A diagram: <img src="data-flow.png">'],
+    ["a link in a heading", '## Contact <a href="#contact">here</a>'],
+    ["a link in a table", '| Data |\n| ---- |\n| <a href="README.md">PAT</a> |'],
+    ["a comment", "<!-- Keep in step with README.md -->"],
+  ])("refuses raw HTML anywhere, such as %s", (_, html) => {
+    expect(() => renderPrivacyPage(`# Policy\n\n${html}\n`)).toThrow("raw HTML");
+  });
+
+  it("refuses raw HTML in the top-level heading", () => {
+    expect(() => renderPrivacyPage('# Policy <a href="README.md">here</a>\n')).toThrow("raw HTML");
+  });
+
+  it("shows HTML written as code, escaped", () => {
+    const page = renderPrivacyPage('# Policy\n\nThe page has no `<a href="README.md">`.\n\n```html\n<img src="x.png">\n```\n');
+
+    expect(page).toContain("<code>&lt;a href=&quot;README.md&quot;&gt;</code>");
+    expect(page).toContain("&lt;img src=&quot;x.png&quot;&gt;");
+    expect(page).not.toContain('href="README.md"');
+    expect(page).not.toContain("<img");
+  });
+
   it("refuses a policy without a top-level heading to title the page", () => {
     expect(() => renderPrivacyPage("## Policy\n\nText.\n")).toThrow("top-level heading");
   });
