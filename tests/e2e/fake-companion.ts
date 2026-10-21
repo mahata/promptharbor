@@ -1,10 +1,13 @@
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { Writable } from "node:stream";
+import { createFrameDecoder, encodeFrame } from "../../src/companion/framing.ts";
 import { GatewayFailure } from "../../src/companion/gateway.ts";
 import type { CopilotGateway } from "../../src/companion/gateway.ts";
 import type { CredentialStore } from "../../src/companion/keychain.ts";
 import { runCompanion } from "../../src/companion/run.ts";
 import type { RuntimeStatus } from "../../src/companion/runtime.ts";
+import { PROTOCOL_VERSION } from "../../src/protocol/messages.ts";
 import type { TurnOutcome } from "../../src/protocol/messages.ts";
 
 const FAKE_MODELS = [
@@ -22,11 +25,14 @@ const keychainPath = requiredEnvironment("FAKE_KEYCHAIN_PATH");
 // A test writes this file to pretend the Copilot CLI is missing or too old. It is read on every
 // lookup, so restarting the companion with Try again picks up a change.
 const runtimeStatePath = join(requiredEnvironment("FAKE_COMPANION_STATE_DIR"), "runtime-state");
+// A test writes this file to have the companion greet the panel as an older or a newer protocol
+// version. Each companion reads it as it starts, so Try again picks up a change.
+const protocolPath = join(requiredEnvironment("FAKE_COMPANION_STATE_DIR"), "protocol");
 writeFileSync(runningMarker, "");
 
 const companion = runCompanion({
   stdin: process.stdin,
-  stdout: process.stdout,
+  stdout: greetingAs(fakeProtocol(), process.stdout),
   stderr: process.stderr,
   args: process.argv.slice(2),
   createGateway: createFakeGateway,
@@ -43,6 +49,35 @@ function fakeRuntimeStatus(): RuntimeStatus {
   if (state === "missing") return { state: "missing" };
   if (state === "unsupported") return { state: "unsupported", path: "/opt/homebrew/bin/copilot" };
   return { state: "ready", path: "/opt/homebrew/bin/copilot", version: "1.0.89-3" };
+}
+
+function fakeProtocol() {
+  return existsSync(protocolPath) ? readFileSync(protocolPath, "utf8").trim() : "current";
+}
+
+// Only the hello changes: forget and its replies are the same in every protocol version.
+function greetingAs(protocol: string, stdout: Writable): Writable {
+  if (protocol === "current") return stdout;
+  const decoder = createFrameDecoder((message) => stdout.write(encodeFrame(isHello(message) ? fakeHello(protocol, message) : message)));
+  return new Writable({
+    write(chunk: Buffer, _encoding, callback) {
+      decoder.push(chunk);
+      callback();
+    },
+  });
+}
+
+function fakeHello(protocol: string, hello: Record<string, unknown>) {
+  if (protocol === "older") {
+    // Protocol 3's hello, from before the companion reported the Copilot CLI it found.
+    const { runtime: _runtime, runtimeVersion: _runtimeVersion, ...protocol3Hello } = hello;
+    return { ...protocol3Hello, protocolVersion: 3 };
+  }
+  return { ...hello, protocolVersion: PROTOCOL_VERSION + 1, theme: "dark" };
+}
+
+function isHello(message: unknown): message is Record<string, unknown> {
+  return typeof message === "object" && message !== null && "type" in message && message.type === "hello";
 }
 
 function createFakeGateway(): CopilotGateway {

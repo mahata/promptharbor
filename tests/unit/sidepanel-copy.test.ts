@@ -69,9 +69,24 @@ describe("side panel copy", () => {
     expect(BRIDGE_FAILURE_TEXT.companion_start_failed).not.toContain("Node.js");
   });
 
-  it("tells the user to rebuild and reload the extension when the companion speaks another protocol", () => {
+  it("tells the user to rebuild and reload the extension when the companion sends a message the panel does not accept", () => {
     expect(BRIDGE_FAILURE_TEXT.companion_protocol).toContain("pnpm build");
     expect(BRIDGE_FAILURE_TEXT.companion_protocol).toContain("chrome://extensions");
+  });
+
+  it("tells the user to install a newer companion when the installed one is too old for the extension", () => {
+    expect(BRIDGE_FAILURE_TEXT.companion_outdated).toContain("companion on this Mac is too old");
+    expect(BRIDGE_FAILURE_TEXT.companion_outdated).toContain("latest Prompt Harbor companion package");
+    expect(BRIDGE_FAILURE_TEXT.companion_outdated).toContain("Try again");
+    expect(BRIDGE_FAILURE_TEXT.companion_outdated).not.toContain("pnpm");
+  });
+
+  it("tells the user that Chrome updates an extension too old for the companion, and how to update it now", () => {
+    expect(BRIDGE_FAILURE_TEXT.extension_outdated).toContain("This extension is too old");
+    expect(BRIDGE_FAILURE_TEXT.extension_outdated).toContain("Chrome updates extensions on its own");
+    expect(BRIDGE_FAILURE_TEXT.extension_outdated).toContain("chrome://extensions, turn on Developer mode and choose Update");
+    expect(BRIDGE_FAILURE_TEXT.extension_outdated).not.toContain("companion package");
+    expect(BRIDGE_FAILURE_TEXT.extension_outdated).not.toContain("pnpm");
   });
 
   it("points to Sign out before connecting with a different PAT", () => {
