@@ -1,6 +1,6 @@
 # Prompt Harbor Privacy Policy
 
-Last updated: October 18, 2026
+Last updated: October 21, 2026
 
 Prompt Harbor is an independent, unofficial Chrome extension for chatting with GitHub Copilot
 from Chrome's side panel, through a companion program on your Mac. It is not affiliated with,
@@ -14,13 +14,17 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
   sends your requests to GitHub through the GitHub Copilot CLI you installed.
 - What goes to GitHub is what Prompt Harbor needs to chat with GitHub Copilot for you: your
   personal access token (PAT), your prompts, and the pages you choose to include.
+- The companion always saves your PAT in your macOS login keychain until you sign out. Other
+  programs running as your macOS user can read it there.
 
 ## What Prompt Harbor handles, and why
 
 - **Your fine-grained PAT**, when you choose **Connect**. The panel passes it to the companion
   through Chrome native messaging. The companion uses it to sign in to GitHub Copilot through
-  the GitHub Copilot SDK and the GitHub Copilot CLI. Once GitHub accepts it, the companion saves
-  it in your macOS login keychain. It is never stored in Chrome.
+  the GitHub Copilot SDK and the GitHub Copilot CLI. Once GitHub accepts it, the companion
+  always saves it in your macOS login keychain, and signs in with it again each time you open
+  the panel, until you sign out. There is no option to use a PAT without saving it. It is
+  never stored in Chrome.
 - **Your prompts and Copilot's replies**, when you send a prompt. Each prompt goes to GitHub
   Copilot with the conversation so far, so that Copilot can reply. The panel keeps the
   conversation only in memory. While the companion runs, the GitHub Copilot CLI also keeps a
@@ -59,15 +63,22 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
 
 - Leave **Include this page** unticked on pages that show private information. A page's URL
   can carry secrets such as session or password-reset tokens.
-- **Sign out** deletes the saved PAT. You can also revoke the PAT on GitHub at any time.
+- Use a PAT that expires soon and has only the Copilot Requests permission. Prompt Harbor
+  always saves the PAT, so this limits what anyone who reads it can do, and for how long.
+- **Sign out** deletes the saved PAT, so signing out when you are done leaves no PAT saved.
+  You can also revoke the PAT on GitHub at any time.
 - Uninstalling the companion removes it and, if you choose, the saved PAT. Removing the
   extension from Chrome removes what it stored in Chrome.
 
 ## Security
 
-The saved PAT is encrypted at rest in your macOS login keychain. The extension passes the PAT,
-your prompts and included pages only to the companion on your Mac, through Chrome native
-messaging, and the GitHub Copilot CLI sends them to GitHub over HTTPS.
+The saved PAT is encrypted at rest in your macOS login keychain. It is not protected from
+other programs running as your macOS user, though. The companion saves it with macOS's
+`security` command-line tool, which macOS then lets read the PAT without asking you, and any
+of those programs can run that tool. While you are connected, they can also read the PAT
+from the environment of the GitHub Copilot CLI that the companion runs. The extension passes
+the PAT, your prompts and included pages only to the companion on your Mac, through Chrome
+native messaging, and the GitHub Copilot CLI sends them to GitHub over HTTPS.
 
 ## Limited Use
 

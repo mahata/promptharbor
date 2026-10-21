@@ -128,8 +128,11 @@ function quoteForShell(value: string) {
 const PAT_EXPLANATION = "Prompt Harbor needs a fine-grained PAT with the Copilot Requests permission to use GitHub Copilot as you.";
 const PAT_DISCLOSURE =
   "Connecting sends this PAT, and then your prompts and any pages you include, to GitHub through the companion " +
-  "and the GitHub Copilot CLI on this Mac. Once GitHub accepts the PAT, the companion saves it in your macOS " +
-  "login keychain until you sign out.";
+  "and the GitHub Copilot CLI on this Mac.";
+const PAT_STORAGE_NOTE =
+  "Once GitHub accepts the PAT, the companion always saves it in your macOS login keychain and connects with it " +
+  "every time you open this panel, until you sign out. Other programs running as your macOS user can read it there " +
+  "without macOS asking you, so use a PAT that expires soon and has no other permissions.";
 
 function patField(page: Page) {
   return page.getByLabel(PAT_EXPLANATION);
@@ -262,9 +265,11 @@ test("connects with the saved PAT once Try again finds the companion", async () 
 test("asks a new user only for a PAT, then chats with the cheapest model preselected and renders both sides as inert text", async () => {
   const { page, networkRequests, dialogs } = await openPanel();
   await expect(patField(page)).toBeFocused();
-  await expect(page.locator("main")).toHaveText(`${PAT_EXPLANATION} Connect ${PAT_DISCLOSURE}`, { useInnerText: true });
-  await expect(page.locator("p:visible")).toHaveText([PAT_DISCLOSURE]);
-  await expect(patField(page)).toHaveAccessibleDescription(PAT_DISCLOSURE);
+  await expect(page.locator("main")).toHaveText(`${PAT_EXPLANATION} Connect ${PAT_DISCLOSURE} ${PAT_STORAGE_NOTE}`, {
+    useInnerText: true,
+  });
+  await expect(page.locator("p:visible")).toHaveText([PAT_DISCLOSURE, PAT_STORAGE_NOTE]);
+  await expect(patField(page)).toHaveAccessibleDescription(`${PAT_DISCLOSURE} ${PAT_STORAGE_NOTE}`);
   const connectButton = button(page, "Connect");
   await expect(connectButton).toBeDisabled();
   await patField(page).fill(approvedToken);
