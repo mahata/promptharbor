@@ -226,10 +226,10 @@ does not migrate or remove those entries.
 - **Open:** click the toolbar icon, or press Ctrl+Shift+H on Windows/Linux or ⌘+Shift+H
   on macOS. Change the shortcut from `chrome://extensions/shortcuts`.
 - **Sign in:** the first time, the panel shows only a PAT field, with a note on what
-  connecting sends to GitHub. Paste a fine-grained PAT and choose **Connect**. Once GitHub
-  accepts it, the companion saves it in your macOS login keychain, and from then on the
-  panel opens straight into the chat. **Sign out** deletes the saved PAT and asks for a new
-  one.
+  connecting sends to GitHub and what then happens to the PAT. Paste a fine-grained PAT
+  and choose **Connect**. Once GitHub accepts it, the companion always saves it in your
+  macOS login keychain, and from then on the panel opens straight into the chat.
+  **Sign out** deletes the saved PAT and asks for a new one.
 - **Chat:** write a prompt of up to 32,768 characters and choose **Send**, or press Enter,
   ⌘ Enter or Ctrl Enter. Shift Enter starts a new line. While an input method is composing,
   such as when converting to kanji, Enter only confirms the conversion. The menu next to
@@ -485,8 +485,11 @@ Accepted risks:
   macOS trusts the tool that created an item to read it without warning. The companion
   saves the PAT with `/usr/bin/security`, so any process running as your macOS user can
   read it by running that tool. Use an expiring PAT and sign out when you are done.
-- The panel saves every PAT that GitHub accepts. There is no way to keep a PAT only in
-  memory.
+- The panel saves every PAT that GitHub accepts, and says so under the PAT field before
+  you paste one. There is deliberately no way to keep a PAT only in memory: one that is
+  not saved would have to be pasted every time the panel opens, and while the panel is
+  connected it would still be readable from the runtime's environment, as described
+  below. To leave no PAT saved, sign out when you are done.
 - While a PAT is saved, the panel connects with it every time it opens, which sends it to
   GitHub through the SDK.
 - While connected, the PAT sits in the companion's memory and in the runtime's
