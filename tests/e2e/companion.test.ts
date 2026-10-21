@@ -36,14 +36,16 @@ type OpenPanel = {
   releaseHeldKeychainTask: () => void;
   receivedPrompts: () => string[];
   setCopilotCli: (state: CopilotCliState) => void;
+  setCompanionProtocol: (protocol: CompanionProtocol) => void;
 };
 
 type CopilotCliState = "ready" | "missing" | "unsupported";
-type PanelSetup = { withCompanion?: boolean; savedToken?: string; copilotCli?: CopilotCliState };
+type CompanionProtocol = "current" | "older" | "newer";
+type PanelSetup = { withCompanion?: boolean; savedToken?: string; copilotCli?: CopilotCliState; companionProtocol?: CompanionProtocol };
 
 let cleanUp: (() => Promise<void>) | undefined;
 
-async function openPanel({ withCompanion = true, savedToken, copilotCli }: PanelSetup = {}): Promise<OpenPanel> {
+async function openPanel({ withCompanion = true, savedToken, copilotCli, companionProtocol }: PanelSetup = {}): Promise<OpenPanel> {
   const home = mkdtempSync(join(tmpdir(), "panel-e2e-home-"));
   const companionStateDirectory = join(home, "running-companions");
   mkdirSync(companionStateDirectory);
@@ -52,6 +54,9 @@ async function openPanel({ withCompanion = true, savedToken, copilotCli }: Panel
   const runtimeStatePath = join(companionStateDirectory, "runtime-state");
   const setCopilotCli = (state: CopilotCliState) => writeFileSync(runtimeStatePath, state);
   if (copilotCli !== undefined) setCopilotCli(copilotCli);
+  const protocolPath = join(companionStateDirectory, "protocol");
+  const setCompanionProtocol = (protocol: CompanionProtocol) => writeFileSync(protocolPath, protocol);
+  if (companionProtocol !== undefined) setCompanionProtocol(companionProtocol);
   const fakeBuildDirectory = join(home, "fake-companion-build");
   mkdirSync(fakeBuildDirectory);
   const fakeExecutablePath = join(fakeBuildDirectory, COMPANION_EXECUTABLE_NAME);
@@ -114,6 +119,7 @@ async function openPanel({ withCompanion = true, savedToken, copilotCli }: Panel
     saveTokenOutsidePanel: (token) => writeFileSync(keychainPath, token),
     releaseHeldKeychainTask: () => writeFileSync(`${keychainPath}.release`, ""),
     setCopilotCli,
+    setCompanionProtocol,
     receivedPrompts: () =>
       existsSync(`${keychainPath}.prompts`)
         ? readFileSync(`${keychainPath}.prompts`, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line) as string)
@@ -247,6 +253,56 @@ test("says so when what it found is not the Copilot CLI, and still lets a saved 
   // A PAT saved before the Copilot CLI went stale must not be stranded in the keychain.
   await button(page, "Sign out").click();
   await expect.poll(savedToken).toBeUndefined();
+});
+
+test("says an older companion is out of date, still deletes a saved PAT, and connects once a newer one is installed", async () => {
+  const { page, networkRequests, savedToken, setCompanionProtocol } = await openPanel({
+    companionProtocol: "older",
+    savedToken: approvedToken,
+  });
+  const notice = page.getByRole("alert");
+  await expect(notice).toContainText("The companion on this Mac is too old for this version of the extension.");
+  await expect(notice).toContainText("install the latest Prompt Harbor companion package");
+  await expect(notice).toContainText("(companion_outdated)");
+  await expect(patField(page)).toBeHidden();
+  await expect(promptField(page)).toBeDisabled();
+  const tryAgainButton = button(page, "Try again");
+  await expect(tryAgainButton).toBeFocused();
+
+  // Chrome updates the extension on its own, so anyone with a saved PAT can land here, and it must not be stranded.
+  await button(page, "Sign out").click();
+  await expect(tryAgainButton).toBeFocused();
+  expect(savedToken()).toBeUndefined();
+  await expect(notice).toContainText("(companion_outdated)");
+  await expect(chatView(page)).toBeHidden();
+  await expect(patField(page)).toBeHidden();
+
+  setCompanionProtocol("current");
+  await tryAgainButton.click();
+  await expect(patField(page)).toBeFocused();
+  await expect(notice).toBeHidden();
+  await expect(tryAgainButton).toBeHidden();
+  expect(networkRequests).toEqual([]);
+});
+
+test("says the extension is out of date for a newer companion, and still deletes a saved PAT", async () => {
+  const { page, networkRequests, savedToken } = await openPanel({ companionProtocol: "newer", savedToken: approvedToken });
+  const notice = page.getByRole("alert");
+  await expect(notice).toContainText("This extension is too old for the companion on this Mac.");
+  await expect(notice).toContainText("Chrome updates extensions on its own");
+  await expect(notice).toContainText("(extension_outdated)");
+  await expect(patField(page)).toBeHidden();
+  await expect(promptField(page)).toBeDisabled();
+  const tryAgainButton = button(page, "Try again");
+  await expect(tryAgainButton).toBeFocused();
+
+  await button(page, "Sign out").click();
+  await expect(tryAgainButton).toBeFocused();
+  expect(savedToken()).toBeUndefined();
+  await expect(notice).toContainText("(extension_outdated)");
+  await expect(chatView(page)).toBeHidden();
+  await expect(patField(page)).toBeHidden();
+  expect(networkRequests).toEqual([]);
 });
 
 test("connects with the saved PAT once Try again finds the companion", async () => {

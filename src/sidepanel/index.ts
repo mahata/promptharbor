@@ -28,7 +28,7 @@ import { isFineGrainedPersonalAccessToken, MAX_PROMPT_LENGTH } from "../protocol
 import type { ErrorCode, ModelSummary, PageContext } from "../protocol/messages.ts";
 import "./style.css";
 
-type PanelPhase = "detecting" | "unavailable" | "no_runtime" | "ready" | "connecting" | "connected" | "sending";
+type PanelPhase = "detecting" | "unavailable" | "blocked" | "ready" | "connecting" | "connected" | "sending";
 type PanelView = "none" | "setup" | "chat";
 type SessionError = Extract<SessionMessage, { type: "error" }>;
 
@@ -133,16 +133,10 @@ function startConnecting({ withSavedToken }: { withSavedToken: boolean }) {
 function handleBridgeEvent(event: BridgeEvent) {
   switch (event.type) {
     case "ready": {
-      // A companion that cannot reach a usable Copilot CLI stays connected but has nothing to
-      // connect with, so the panel explains that instead of taking a PAT it could not use. With a
-      // PAT already saved it keeps the chat view, which is what offers Sign out to delete it.
       const runtimeNotice = runtimeStatusText(event.runtime);
       status.textContent = "";
       if (runtimeNotice !== undefined) {
-        phase = "no_runtime";
-        view = event.savedToken ? "chat" : "none";
-        showError(runtimeNotice, event.runtime);
-        focusAfterUpdate = tryAgainButton;
+        block(runtimeNotice, event.runtime, event.savedToken);
         break;
       }
       phase = "ready";
@@ -155,6 +149,10 @@ function handleBridgeEvent(event: BridgeEvent) {
       }
       break;
     }
+    case "mismatch":
+      status.textContent = "";
+      block(BRIDGE_FAILURE_TEXT[event.failure], event.failure, event.savedToken);
+      break;
     case "message":
       handleSessionMessage(event.message);
       break;
@@ -171,6 +169,17 @@ function handleBridgeEvent(event: BridgeEvent) {
   updateControls();
   focusAfterUpdate?.focus();
   focusAfterUpdate = undefined;
+}
+
+// A companion that cannot reach a usable Copilot CLI, or speaks another protocol version, stays
+// connected but has nothing to connect with, so the panel explains that instead of taking a PAT it
+// could not use. With a PAT already saved it keeps the chat view, which is what offers Sign out to
+// delete it.
+function block(notice: string, code: string, savedToken: boolean) {
+  phase = "blocked";
+  view = savedToken ? "chat" : "none";
+  showError(notice, code);
+  focusAfterUpdate = tryAgainButton;
 }
 
 function handleSessionMessage(message: SessionMessage) {
@@ -284,7 +293,7 @@ function hideError() {
 function canTryAgain() {
   const retryable =
     phase === "unavailable" ||
-    phase === "no_runtime" ||
+    phase === "blocked" ||
     (phase === "ready" && view === "chat") ||
     (phase === "connected" && modelsById.size === 0);
   // Try again restarts the companion, which would drop a PAT that is not saved yet or race a pending sign-out.

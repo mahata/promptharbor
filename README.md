@@ -183,6 +183,14 @@ it had moved aside. It also replaces the launcher that earlier development versi
 installed. Updating keeps a saved PAT. A companion that is running keeps running the
 earlier version, so close any open Prompt Harbor side panel and open it again.
 
+The panel checks that the companion speaks the extension's protocol version. Chrome updates an
+extension from the Chrome Web Store on its own but cannot update the companion, so after a
+protocol change the panel reports `companion_outdated` until you install a newer package.
+`extension_outdated` is the reverse: Chrome will update the extension, and choosing **Update**
+in `chrome://extensions` with Developer mode on does it at once. For `dist/` loaded unpacked,
+run `pnpm build` first, because Chrome does not update it and **Update** only reloads it.
+Either way **Sign out** still works, so a saved PAT can be deleted.
+
 ### Uninstall
 
 Run the uninstall script in Terminal:
@@ -325,6 +333,9 @@ If something fails:
   result, and delete any leftover item in Keychain Access.
 - **`companion_*` codes:** the panel names the fix. Most need the package installed again,
   followed by **Try again**.
+- **`companion_outdated` or `extension_outdated`:** the companion and the extension speak
+  different protocol versions, and the code names the one that is behind. Install a package
+  and load a `dist/` built from the same commit.
 - **`missing` or `unsupported` before you paste a PAT:** what the companion found when it
   started. `missing` is no Copilot CLI at all; `unsupported` is a program that does not
   identify itself as one. The panel explains either without taking a PAT it could not use,
@@ -359,6 +370,8 @@ The extension:
   keychain; available models and the conversation live only in the panel's memory.
 - Sends only the prompts you submit, exactly as typed, and refuses any over 32,768
   characters. It attaches page content only as described above, and never files.
+- Sends a companion that speaks another protocol version nothing but **Sign out**'s request
+  to delete the saved PAT, and disconnects it if it sends anything but the answer.
 - Renders prompts as plain text. Renders responses as Markdown by building DOM nodes from
   [marked](https://marked.js.org/)'s tokens, never through `innerHTML`, so raw HTML in a
   response shows as literal text. Errors show fixed text and a code,
@@ -552,8 +565,8 @@ The browser tests:
 - Use the real installer to register a scripted fake companion in a throwaway Chromium
   profile.
 - Load the built extension and drive every panel state, including the first-run PAT
-  prompt, a missing companion, a missing Copilot CLI and a program that is not one,
-  rejected tokens, no models, saving, reusing, replacing and
+  prompt, a missing companion, one older or newer than the extension, a missing Copilot CLI
+  and a program that is not one, rejected tokens, no models, saving, reusing, replacing and
   unreadable saved PATs, signing out, multi-turn chat, model switches, New chat, including
   a page (with Chrome's scripting stubbed, because a test cannot click the toolbar icon to
   grant `activeTab`) and refusing to when access is missing, keyboard

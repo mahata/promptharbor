@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { openCompanionBridge } from "../../src/sidepanel/companion.ts";
 import type { BridgeEvent, NativePort } from "../../src/sidepanel/companion.ts";
 import { HOST_NAME } from "../../src/protocol/identity.ts";
+import { PROTOCOL_VERSION } from "../../src/protocol/messages.ts";
 
 let lastErrorMessage: string | undefined;
 
@@ -37,6 +38,8 @@ class FakePort implements NativePort {
 }
 
 const hello = { type: "hello", protocolVersion: 4, sdkVersion: "1.0.14", savedToken: true, runtime: "ready", runtimeVersion: "1.0.89-3" };
+// Protocol 3's hello, from before the companion reported the Copilot CLI it found.
+const protocol3Hello = { type: "hello", protocolVersion: 3, sdkVersion: "1.0.14", savedToken: true };
 let port: FakePort;
 let events: BridgeEvent[];
 let connectedHostNames: string[];
@@ -55,6 +58,13 @@ function openBridge() {
 function readyBridge() {
   const bridge = openBridge();
   port.deliver(hello);
+  events.length = 0;
+  return bridge;
+}
+
+function mismatchedBridge(greeting: unknown = protocol3Hello) {
+  const bridge = openBridge();
+  port.deliver(greeting);
   events.length = 0;
   return bridge;
 }
@@ -108,8 +118,13 @@ describe("openCompanionBridge", () => {
 
   it.each([
     ["a session message before hello", [{ type: "done", outcome: "complete" }]],
-    ["a hello from an older companion", [{ type: "hello", protocolVersion: 1, sdkVersion: "1.0.14" }]],
-    ["a hello for another protocol version", [{ ...hello, protocolVersion: 2 }]],
+    ["a greeting that is not an object", ["hello"]],
+    ["a hello without a protocol version", [{ type: "hello", sdkVersion: "1.0.14", savedToken: true }]],
+    ["a protocol version that is not an integer", [{ ...hello, protocolVersion: String(PROTOCOL_VERSION) }]],
+    ["protocol version 0", [{ ...hello, protocolVersion: 0 }]],
+    ["a saved-token flag that is not a boolean", [{ ...protocol3Hello, savedToken: "yes" }]],
+    ["a hello for this protocol version that lacks a field", [{ ...protocol3Hello, protocolVersion: PROTOCOL_VERSION }]],
+    ["a hello for this protocol version with an unknown field", [{ ...hello, theme: "dark" }]],
     ["a second hello", [hello, hello]],
     ["a malformed message", [hello, { type: "delta", text: 42 }]],
     ["an unknown message", [hello, { type: "eval", code: "alert(1)" }]],
@@ -130,6 +145,63 @@ describe("openCompanionBridge", () => {
     port.hostDisconnects("Native host has exited.");
 
     expect(events).toEqual([{ type: "closed", failure: "companion_protocol" }]);
+  });
+
+  it.each([
+    ["protocol 3's hello, which has no runtime state", protocol3Hello, { failure: "companion_outdated", savedToken: true }],
+    [
+      "protocol 1's hello, which has no saved-token flag",
+      { type: "hello", protocolVersion: 1, sdkVersion: "1.0.14" },
+      { failure: "companion_outdated", savedToken: false },
+    ],
+    [
+      "a newer hello with a field this panel does not know",
+      { ...hello, protocolVersion: PROTOCOL_VERSION + 1, theme: "dark" },
+      { failure: "extension_outdated", savedToken: true },
+    ],
+  ])("reports which side is out of date on %s, and stays connected", (_description, greeting, mismatch) => {
+    openBridge();
+    port.deliver(greeting);
+
+    expect(events).toEqual([{ type: "mismatch", ...mismatch }]);
+    expect(port.disconnectCalls).toBe(0);
+  });
+
+  it("lets a companion on another protocol version do nothing but delete a saved PAT", () => {
+    const bridge = mismatchedBridge();
+    expect(bridge.send({ type: "connect_saved" })).toBe(false);
+    expect(bridge.send({ type: "send", model: "gpt-5-mini", prompt: "Say hello." })).toBe(false);
+    expect(bridge.send({ type: "forget" })).toBe(true);
+    expect(port.posted).toEqual([{ type: "forget" }]);
+
+    const answers = [
+      { type: "error", stage: "credential", code: "forget_failed" },
+      { type: "credential", saved: false },
+    ];
+    for (const message of answers) port.deliver(message);
+    expect(events).toEqual(answers.map((message) => ({ type: "message", message })));
+  });
+
+  it.each([
+    ["a session message", { type: "connected", models: [] }],
+    ["a credential message that does not answer forget", { type: "credential", saved: true }],
+    ["a credential error that does not answer forget", { type: "error", stage: "credential", code: "save_failed" }],
+    ["an unknown message", { type: "eval", code: "alert(1)" }],
+    ["a second hello", protocol3Hello],
+  ])("keeps reporting the mismatch when a companion on another protocol version sends %s", (_description, message) => {
+    const bridge = mismatchedBridge();
+    port.deliver(message);
+
+    expect(events).toEqual([{ type: "closed", failure: "companion_outdated" }]);
+    expect(port.disconnectCalls).toBe(1);
+    expect(bridge.send({ type: "forget" })).toBe(false);
+  });
+
+  it("keeps reporting the mismatch when a companion on another protocol version exits", () => {
+    mismatchedBridge({ ...hello, protocolVersion: PROTOCOL_VERSION + 1 });
+    port.hostDisconnects("Native host has exited.");
+
+    expect(events).toEqual([{ type: "closed", failure: "extension_outdated" }]);
   });
 
   it("posts panel messages only while the companion is ready", () => {

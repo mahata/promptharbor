@@ -81,6 +81,13 @@ export const BRIDGE_FAILURE_TEXT: Record<BridgeFailure, string> = {
     "The companion sent a message this panel does not accept, so the panel disconnected it. " +
     "If you updated this checkout, run pnpm build and reload the extension in chrome://extensions. " +
     `Otherwise, ${REINSTALL_HINT}`,
+  companion_outdated:
+    "The companion on this Mac is too old for this version of the extension. To update it, install the latest " +
+    "Prompt Harbor companion package for this Mac, then choose Try again.",
+  extension_outdated:
+    "This extension is too old for the companion on this Mac. Chrome updates extensions on its own, and the panel " +
+    "works again once this one is updated. To update it now, open chrome://extensions, turn on Developer mode and " +
+    "choose Update.",
 };
 
 export const CONNECT_ERROR_TEXT: Record<ErrorCode<"connect">, string> = {
