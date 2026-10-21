@@ -39,11 +39,12 @@ type OpenPanel = {
 };
 
 type CopilotCliState = "ready" | "missing" | "unsupported";
-type PanelSetup = { withCompanion?: boolean; savedToken?: string; copilotCli?: CopilotCliState };
+type PlatformOs = chrome.runtime.PlatformInfo["os"];
+type PanelSetup = { withCompanion?: boolean; savedToken?: string; copilotCli?: CopilotCliState; os?: PlatformOs };
 
 let cleanUp: (() => Promise<void>) | undefined;
 
-async function openPanel({ withCompanion = true, savedToken, copilotCli }: PanelSetup = {}): Promise<OpenPanel> {
+async function openPanel({ withCompanion = true, savedToken, copilotCli, os = "mac" }: PanelSetup = {}): Promise<OpenPanel> {
   const home = mkdtempSync(join(tmpdir(), "panel-e2e-home-"));
   const companionStateDirectory = join(home, "running-companions");
   mkdirSync(companionStateDirectory);
@@ -83,6 +84,8 @@ async function openPanel({ withCompanion = true, savedToken, copilotCli }: Panel
     await context.close();
     rmSync(home, { recursive: true, force: true });
   };
+  // Chrome reports the system it really runs on, and CI runs these tests on Linux.
+  await context.addInitScript(reportPlatform, os);
 
   const networkRequests: string[] = [];
   await context.route(/^https?:/, async (route) => {
@@ -201,6 +204,25 @@ function markPatFormIfShown() {
   });
 }
 
+function reportPlatform(os: PlatformOs) {
+  const runtime = globalThis.chrome?.runtime;
+  if (runtime?.getPlatformInfo === undefined) return;
+  const getPlatformInfo = runtime.getPlatformInfo.bind(runtime);
+  runtime.getPlatformInfo = (async () => ({ ...(await getPlatformInfo()), os })) as typeof runtime.getPlatformInfo;
+}
+
+function recordNativeConnections() {
+  const runtime = globalThis.chrome?.runtime;
+  if (runtime?.connectNative === undefined) return;
+  const connectNative = runtime.connectNative.bind(runtime);
+  const hostNames: string[] = [];
+  Object.assign(globalThis, { nativeConnections: hostNames });
+  runtime.connectNative = (hostName) => {
+    hostNames.push(hostName);
+    return connectNative(hostName);
+  };
+}
+
 test.afterEach(async () => {
   await cleanUp?.();
   cleanUp = undefined;
@@ -219,6 +241,29 @@ test("explains how to install a missing companion, then finds it after installat
   await expect(patField(page)).toBeFocused();
   await expect(page.getByRole("alert")).toBeHidden();
   await expect(tryAgainButton).toBeHidden();
+  expect(networkRequests).toEqual([]);
+});
+
+test("explains that Prompt Harbor requires macOS on other systems, without starting a companion or offering Try again", async () => {
+  const { context, page, openAnotherPanel, networkRequests } = await openPanel({ withCompanion: false, os: "win" });
+  const notice =
+    "Prompt Harbor requires macOS. It reaches GitHub Copilot through a companion program that runs on a Mac, " +
+    "and there is no version of that program for this system.";
+  await expect(page.getByRole("status")).toHaveText(notice);
+  await expect(page.locator("main")).toHaveText(notice, { useInnerText: true });
+  await expect(page.getByRole("alert")).toBeHidden();
+  await expect(button(page, "Try again")).toBeHidden();
+  await expect(page.getByRole("button")).toHaveCount(0);
+
+  // A failed companion start would surface only after the notice, so record whether the panel asks Chrome for one.
+  await page.close();
+  await context.addInitScript(recordNativeConnections);
+  const reopened = await openAnotherPanel();
+  await expect(reopened.getByRole("status")).toHaveText(notice);
+  const nativeConnections = await reopened.evaluate(
+    () => (globalThis as unknown as { nativeConnections: string[] }).nativeConnections,
+  );
+  expect(nativeConnections).toEqual([]);
   expect(networkRequests).toEqual([]);
 });
 

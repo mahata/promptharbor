@@ -70,7 +70,8 @@ argument. The Copilot CLI does not speak that, and its `--acp` mode is a differe
 
 - macOS 13.5 or later, on Apple silicon or Intel, with Google Chrome 120 or later. The
   installer registers the companion with Google Chrome only, not with Chromium or other
-  Chrome channels.
+  Chrome channels. Chrome installs the extension on other systems too, but there the panel
+  only explains that Prompt Harbor requires macOS, and never tries to start a companion.
 - A GitHub account with Copilot access, and permission to create a fine-grained PAT for
   it.
 - The [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), which the
