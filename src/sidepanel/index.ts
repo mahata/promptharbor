@@ -19,6 +19,7 @@ import {
   SEND_ERROR_TEXT,
   STATUS_TEXT,
   STOPPED_TURN_NOTE,
+  UNSUPPORTED_OS_TEXT,
 } from "./copy.ts";
 import { pickModel, savedModelKey } from "./models.ts";
 import { chromePageCaptureDeps, readActivePage } from "./page.ts";
@@ -28,7 +29,7 @@ import { isFineGrainedPersonalAccessToken, MAX_PROMPT_LENGTH } from "../protocol
 import type { ErrorCode, ModelSummary, PageContext } from "../protocol/messages.ts";
 import "./style.css";
 
-type PanelPhase = "detecting" | "unavailable" | "blocked" | "ready" | "connecting" | "connected" | "sending";
+type PanelPhase = "detecting" | "unsupported_os" | "unavailable" | "blocked" | "ready" | "connecting" | "connected" | "sending";
 type PanelView = "none" | "setup" | "chat";
 type SessionError = Extract<SessionMessage, { type: "error" }>;
 
@@ -70,6 +71,15 @@ let modelsById = new Map<string, ModelSummary>();
 let activeLogin: string | undefined;
 let activeTurn: TranscriptTurn | undefined;
 let focusAfterUpdate: HTMLElement | undefined;
+
+async function startPanel() {
+  const { os } = await chrome.runtime.getPlatformInfo();
+  // There is no companion for other systems, so starting one there could only fail as not installed.
+  if (os === "mac") return startCompanion();
+  phase = "unsupported_os";
+  status.textContent = UNSUPPORTED_OS_TEXT;
+  updateControls();
+}
 
 function startCompanion() {
   phase = "detecting";
@@ -301,7 +311,7 @@ function canTryAgain() {
 }
 
 function updateControls() {
-  const companionReady = phase !== "detecting" && phase !== "unavailable";
+  const companionReady = phase !== "detecting" && phase !== "unsupported_os" && phase !== "unavailable";
   const ready = phase === "ready";
   const connected = phase === "connected";
   const sending = phase === "sending";
@@ -428,4 +438,4 @@ model.addEventListener("change", () => {
 window.addEventListener("pagehide", resetPanel);
 
 resetPanel();
-startCompanion();
+void startPanel();

@@ -196,7 +196,7 @@ describe("self-installing companion", () => {
     const home = temporaryDirectory("companion-self-install-home-");
     const installed = spawnSync(builtExecutablePath, ["--install", home], { encoding: "utf8", env: {} });
     expect(installed.status).toBe(0);
-    const { applicationDirectory, companionDirectory, executablePath, hostManifestPath } = companionInstallPaths(home);
+    const { applicationDirectory, cacheDirectory, companionDirectory, executablePath, hostManifestPath } = companionInstallPaths(home);
     expect(installed.stdout).toContain(executablePath);
     expect(JSON.parse(readFileSync(hostManifestPath, "utf8"))).toMatchObject({ path: executablePath, allowed_origins: [EXTENSION_ORIGIN] });
     expect(readdirSync(companionDirectory).sort()).toEqual(readdirSync(buildDirectory).sort());
@@ -205,6 +205,8 @@ describe("self-installing companion", () => {
     await vi.waitFor(() => expect(frames).toEqual([expect.objectContaining({ type: "hello", sdkVersion: installedSdkVersion })]), startupTimeout);
     child.stdin.end();
     await expect(exitCode).resolves.toBe(0);
+    // The greeting had the real Copilot CLI unpack its runtime into the cache, which uninstalling removes too.
+    expect(readdirSync(cacheDirectory)).not.toEqual([]);
 
     const uninstalled = spawnSync(join(companionDirectory, UNINSTALL_SCRIPT_NAME), [], { encoding: "utf8", env: { HOME: home } });
     expect(uninstalled.status).toBe(0);
@@ -212,6 +214,7 @@ describe("self-installing companion", () => {
     expect(uninstalled.stdout).toContain("No saved PAT was found in your macOS login keychain.");
     expect(existsSync(applicationDirectory)).toBe(false);
     expect(existsSync(hostManifestPath)).toBe(false);
+    expect(existsSync(dirname(cacheDirectory))).toBe(false);
   });
 });
 
@@ -220,7 +223,7 @@ describe("installed companion", () => {
     const home = temporaryDirectory("companion-install-home-");
     const env = { ...process.env, HOME: home };
     expect(spawnSync(process.execPath, [installCliPath], { encoding: "utf8", env }).status).toBe(0);
-    const { applicationDirectory, configPath, executablePath, hostManifestPath } = companionInstallPaths(home);
+    const { applicationDirectory, cacheDirectory, configPath, executablePath, hostManifestPath } = companionInstallPaths(home);
 
     expect(JSON.parse(readFileSync(hostManifestPath, "utf8"))).toMatchObject({ path: executablePath, allowed_origins: [EXTENSION_ORIGIN] });
     expect(realpathSync(executablePath)).not.toBe(realpathSync(builtExecutablePath));
@@ -232,11 +235,13 @@ describe("installed companion", () => {
     await vi.waitFor(() => expect(frames).toEqual([expect.objectContaining({ type: "hello", sdkVersion: installedSdkVersion })]), startupTimeout);
     child.stdin.end();
     await expect(exitCode).resolves.toBe(0);
+    expect(readdirSync(cacheDirectory)).not.toEqual([]);
 
     const uninstalled = spawnSync(process.execPath, [installCliPath, "--uninstall"], { encoding: "utf8", env });
     expect(uninstalled.status).toBe(0);
     expect(uninstalled.stdout).toContain("No saved PAT was found in your macOS login keychain.");
     expect(existsSync(applicationDirectory)).toBe(false);
     expect(existsSync(hostManifestPath)).toBe(false);
+    expect(existsSync(dirname(cacheDirectory))).toBe(false);
   });
 });

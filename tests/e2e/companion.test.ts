@@ -41,11 +41,24 @@ type OpenPanel = {
 
 type CopilotCliState = "ready" | "missing" | "unsupported";
 type CompanionProtocol = "current" | "older" | "newer";
-type PanelSetup = { withCompanion?: boolean; savedToken?: string; copilotCli?: CopilotCliState; companionProtocol?: CompanionProtocol };
+type PlatformOs = chrome.runtime.PlatformInfo["os"];
+type PanelSetup = {
+  withCompanion?: boolean;
+  savedToken?: string;
+  copilotCli?: CopilotCliState;
+  companionProtocol?: CompanionProtocol;
+  os?: PlatformOs;
+};
 
 let cleanUp: (() => Promise<void>) | undefined;
 
-async function openPanel({ withCompanion = true, savedToken, copilotCli, companionProtocol }: PanelSetup = {}): Promise<OpenPanel> {
+async function openPanel({
+  withCompanion = true,
+  savedToken,
+  copilotCli,
+  companionProtocol,
+  os = "mac",
+}: PanelSetup = {}): Promise<OpenPanel> {
   const home = mkdtempSync(join(tmpdir(), "panel-e2e-home-"));
   const companionStateDirectory = join(home, "running-companions");
   mkdirSync(companionStateDirectory);
@@ -88,6 +101,8 @@ async function openPanel({ withCompanion = true, savedToken, copilotCli, compani
     await context.close();
     rmSync(home, { recursive: true, force: true });
   };
+  // Chrome reports the system it really runs on, and CI runs these tests on Linux.
+  await context.addInitScript(reportPlatform, os);
 
   const networkRequests: string[] = [];
   await context.route(/^https?:/, async (route) => {
@@ -134,8 +149,11 @@ function quoteForShell(value: string) {
 const PAT_EXPLANATION = "Prompt Harbor needs a fine-grained PAT with the Copilot Requests permission to use GitHub Copilot as you.";
 const PAT_DISCLOSURE =
   "Connecting sends this PAT, and then your prompts and any pages you include, to GitHub through the companion " +
-  "and the GitHub Copilot CLI on this Mac. Once GitHub accepts the PAT, the companion saves it in your macOS " +
-  "login keychain until you sign out.";
+  "and the GitHub Copilot CLI on this Mac.";
+const PAT_STORAGE_NOTE =
+  "Once GitHub accepts the PAT, the companion always saves it in your macOS login keychain and connects with it " +
+  "every time you open this panel, until you sign out. Other programs running as your macOS user can read it there " +
+  "without macOS asking you, so use a PAT that expires soon and has no other permissions.";
 
 function patField(page: Page) {
   return page.getByLabel(PAT_EXPLANATION);
@@ -204,6 +222,25 @@ function markPatFormIfShown() {
   });
 }
 
+function reportPlatform(os: PlatformOs) {
+  const runtime = globalThis.chrome?.runtime;
+  if (runtime?.getPlatformInfo === undefined) return;
+  const getPlatformInfo = runtime.getPlatformInfo.bind(runtime);
+  runtime.getPlatformInfo = (async () => ({ ...(await getPlatformInfo()), os })) as typeof runtime.getPlatformInfo;
+}
+
+function recordNativeConnections() {
+  const runtime = globalThis.chrome?.runtime;
+  if (runtime?.connectNative === undefined) return;
+  const connectNative = runtime.connectNative.bind(runtime);
+  const hostNames: string[] = [];
+  Object.assign(globalThis, { nativeConnections: hostNames });
+  runtime.connectNative = (hostName) => {
+    hostNames.push(hostName);
+    return connectNative(hostName);
+  };
+}
+
 test.afterEach(async () => {
   await cleanUp?.();
   cleanUp = undefined;
@@ -222,6 +259,29 @@ test("explains how to install a missing companion, then finds it after installat
   await expect(patField(page)).toBeFocused();
   await expect(page.getByRole("alert")).toBeHidden();
   await expect(tryAgainButton).toBeHidden();
+  expect(networkRequests).toEqual([]);
+});
+
+test("explains that Prompt Harbor requires macOS on other systems, without starting a companion or offering Try again", async () => {
+  const { context, page, openAnotherPanel, networkRequests } = await openPanel({ withCompanion: false, os: "win" });
+  const notice =
+    "Prompt Harbor requires macOS. It reaches GitHub Copilot through a companion program that runs on a Mac, " +
+    "and there is no version of that program for this system.";
+  await expect(page.getByRole("status")).toHaveText(notice);
+  await expect(page.locator("main")).toHaveText(notice, { useInnerText: true });
+  await expect(page.getByRole("alert")).toBeHidden();
+  await expect(button(page, "Try again")).toBeHidden();
+  await expect(page.getByRole("button")).toHaveCount(0);
+
+  // A failed companion start would surface only after the notice, so record whether the panel asks Chrome for one.
+  await page.close();
+  await context.addInitScript(recordNativeConnections);
+  const reopened = await openAnotherPanel();
+  await expect(reopened.getByRole("status")).toHaveText(notice);
+  const nativeConnections = await reopened.evaluate(
+    () => (globalThis as unknown as { nativeConnections: string[] }).nativeConnections,
+  );
+  expect(nativeConnections).toEqual([]);
   expect(networkRequests).toEqual([]);
 });
 
@@ -318,9 +378,11 @@ test("connects with the saved PAT once Try again finds the companion", async () 
 test("asks a new user only for a PAT, then chats with the cheapest model preselected and renders both sides as inert text", async () => {
   const { page, networkRequests, dialogs } = await openPanel();
   await expect(patField(page)).toBeFocused();
-  await expect(page.locator("main")).toHaveText(`${PAT_EXPLANATION} Connect ${PAT_DISCLOSURE}`, { useInnerText: true });
-  await expect(page.locator("p:visible")).toHaveText([PAT_DISCLOSURE]);
-  await expect(patField(page)).toHaveAccessibleDescription(PAT_DISCLOSURE);
+  await expect(page.locator("main")).toHaveText(`${PAT_EXPLANATION} Connect ${PAT_DISCLOSURE} ${PAT_STORAGE_NOTE}`, {
+    useInnerText: true,
+  });
+  await expect(page.locator("p:visible")).toHaveText([PAT_DISCLOSURE, PAT_STORAGE_NOTE]);
+  await expect(patField(page)).toHaveAccessibleDescription(`${PAT_DISCLOSURE} ${PAT_STORAGE_NOTE}`);
   const connectButton = button(page, "Connect");
   await expect(connectButton).toBeDisabled();
   await patField(page).fill(approvedToken);

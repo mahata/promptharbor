@@ -10,6 +10,7 @@ import {
   promptTooLongText,
   SAVED_TOKEN_REJECTED_TEXT,
   SEND_ERROR_TEXT,
+  UNSUPPORTED_OS_TEXT,
 } from "../../src/sidepanel/copy.ts";
 
 describe("side panel copy", () => {
@@ -54,6 +55,12 @@ describe("side panel copy", () => {
     expect(BRIDGE_FAILURE_TEXT.companion_not_installed).toContain("companion package");
     expect(BRIDGE_FAILURE_TEXT.companion_not_installed).toContain("Try again");
     expect(BRIDGE_FAILURE_TEXT.companion_not_installed).not.toContain("pnpm");
+  });
+
+  it("tells a user of another system that Prompt Harbor requires macOS, without sending them to look for a package", () => {
+    expect(UNSUPPORTED_OS_TEXT).toContain("requires macOS");
+    expect(UNSUPPORTED_OS_TEXT).toContain("no version of that program for this system");
+    expect(UNSUPPORTED_OS_TEXT).not.toMatch(/install|package|Try again/i);
   });
 
   it("tells the user to reinstall a companion that Chrome cannot start", () => {
