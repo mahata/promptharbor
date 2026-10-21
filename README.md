@@ -127,7 +127,7 @@ downloaded one with the `installer` command above, which does not ask Gatekeeper
 
 In Chrome, open `chrome://extensions`, turn on Developer mode, choose **Load unpacked**,
 and select this checkout's `dist/` directory. The manifest's `key` pins the extension ID
-to `hdmfkhdfamhcfglofebjnoepkbbbihkg`, and the companion accepts only that ID. Open the
+to `jeljjbfpkheephchenhiegdcljiginai`, and the companion accepts only that ID. Open the
 extension from the toolbar, or press Ctrl+Shift+H on Windows/Linux or ⌘+Shift+H on
 macOS. It should ask for a fine-grained PAT. If it shows an error instead, the error
 names the fix, including when it cannot find the GitHub Copilot CLI.
@@ -609,7 +609,7 @@ upload, because the store accepts only a higher version than the last one.
 
 The store signs the extension with a key of its own, which sets the published extension's ID.
 The private key behind the manifest's current `key` was not kept, so the store cannot give the
-extension the ID `hdmfkhdfamhcfglofebjnoepkbbbihkg`, and the companion would refuse the
+extension the ID `jeljjbfpkheephchenhiegdcljiginai`, and the companion would refuse the
 published extension. Before submitting it for review the first time:
 
 1. Upload the archive as a new item, without submitting it.
