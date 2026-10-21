@@ -72,6 +72,23 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
+      - name: Package for the Chrome Web Store
+        id: webstore-package
+        run: |
+          node src/webstore/package-cli.ts
+          echo "archive=$(basename dist-webstore/prompt-harbor-*.zip)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Chrome Web Store package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # With archive: false the artifact is the zip itself and takes its file name. overwrite
+          # looks up the artifact to replace by name, so it has to be that file name too.
+          name: ${{ steps.webstore-package.outputs.archive }}
+          path: dist-webstore/${{ steps.webstore-package.outputs.archive }}
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+
   e2e-tests:
     name: E2E tests
     needs: build
