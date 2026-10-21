@@ -608,18 +608,10 @@ archive's manifest leaves out `key`, because the store refuses a manifest that h
 upload, because the store accepts only a higher version than the last one.
 
 The store signs the extension with a key of its own, which sets the published extension's ID.
-The private key behind the manifest's current `key` was not kept, so the store cannot give the
-extension the ID `jeljjbfpkheephchenhiegdcljiginai`, and the companion would refuse the
-published extension. Before submitting it for review the first time:
-
-1. Upload the archive as a new item, without submitting it.
-2. On the item's **Package** tab, choose **View public key**. Put the key in
-   `public/manifest.json` as `key`, as one line without the `BEGIN` and `END` lines, and put
-   the item ID in `src/protocol/identity.ts` as `EXTENSION_ID`. `pnpm test` checks that they
-   match.
-3. Run `pnpm build` to regenerate `dist/` with the store's key, then build and install the
-   companion again so Chrome lets the store's ID start it. Loading the rebuilt `dist/`
-   unpacked then gets the same ID as the published extension.
+The manifest's `key` is the store item's public key, which the item's **Package** tab shows
+under **View public key**, so `dist/` loaded unpacked gets the published extension's ID, the
+only one the companion accepts. `EXTENSION_ID` in `src/protocol/identity.ts` names that ID,
+and `pnpm test` checks that `key` and `EXTENSION_ID` agree.
 
 The **Privacy** tab asks for a privacy policy. Link to [PRIVACY.md](PRIVACY.md) on GitHub.
 The companion package is not signed or notarized yet, and macOS refuses to open one downloaded
