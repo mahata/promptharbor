@@ -3,7 +3,7 @@
   "name": "Prompt Harbor",
   "version": "0.1.0",
   "description": "Independent, unofficial side-panel client for GitHub Copilot, connected through a local macOS companion.",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyJ6+HhQGzNpf1EAPIHtKRIXiGeDsJJdLsEq35qpK33HsurrvyxTVGbzORrTgcMAvA1e+RFyLeKBugceOBW7wAhzVVF0LiKkAEiAqie7CEL4q+X0yE4nuX6km99d3gvEIwma4waiRBcu2gPHfR/v2nCa7sSp1Nxemkw+jMyPHxvJX3mUDYZKNhUq6pO6W8vMEOWZHuUq0khYTEGQbCNfE94+e/1CqoQDjI0/vT5qPZu7MRnyaEpUBmQHPZvWhhWo8tW+uo5atRW6YKErnAYRREIV5fYXDtthDZQJQmWTlpjI8lb/ZKMo+zCBU8NXBbBRPJyAgWz83GFKitn1KgotwGwIDAQAB",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsWUUgY4yzWN4C7J6DlmxELTfigea8jtev2pEHt5GK9ehyXuZ075YCyKBn8tHLRpZNOjDKzEOS66zXXs/dG3YxdZGUuRNyRJ4WayjzZxegFOrxp5QJ+hY390dJ/W4eJ3EMuTaqss5pvE3w0NKJZ+O0w1DNTUIxGzU0Gsj4MYEau5Aw9x1oWRBEvII7FkAH5+1AMZ0wIGjAj40kRGuObjKHneJXdzt91FTgMDBQ6q/SN2KU92K9MgoDcpKI6Aqq/q9lHlibDPRaul9Znb8nuyEkPOBiXyO7bIrSfoGutgtZ8tdIZJWJ+RuFHRUOgSytDQY5aYDVq/oSwDTAHIUXPsdnwIDAQAB",
   "minimum_chrome_version": "120",
   "permissions": ["sidePanel", "nativeMessaging", "activeTab", "scripting"],
   "background": {
