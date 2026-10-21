@@ -575,7 +575,9 @@ Chromium also reads the profile's `NativeMessagingHosts` directory. Unit tests a
 type-checked build run in parallel. The E2E job then tests the exact `chrome-extension`
 artifact uploaded by the build, which you can also download from the run and load unpacked
 in place of `dist/`. The companion still comes from a package or `pnpm companion:install`
-built from the same commit. Playwright output, including layout screenshots, is uploaded as
+built from the same commit. The build job also packages that build for the Chrome Web Store
+and uploads the archive itself, not zipped again, as the `prompt-harbor-<version>.zip`
+artifact. Playwright output, including layout screenshots, is uploaded as
 `playwright-test-results` even when tests fail. The companion jobs install the GitHub
 Copilot CLI with Homebrew and run `pnpm test:companion` natively on `macos-latest` (Apple
 silicon) and `macos-15-intel` (Intel), then package each build and upload the package as
@@ -605,7 +607,9 @@ ready to upload in the
 [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole). The
 archive's manifest leaves out `key`, because the store refuses a manifest that has one, while
 `dist/` keeps it for loading unpacked. Raise `version` in `public/manifest.json` before each
-upload, because the store accepts only a higher version than the last one.
+upload, because the store accepts only a higher version than the last one. Every CI run also
+uploads this archive, built from the run's commit, as its `prompt-harbor-<version>.zip`
+artifact.
 
 The store signs the extension with a key of its own, which sets the published extension's ID.
 The manifest's `key` is the store item's public key, which the item's **Package** tab shows
