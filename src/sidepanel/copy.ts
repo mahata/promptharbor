@@ -18,6 +18,10 @@ export const STATUS_TEXT = {
 
 export const NO_MODELS_TEXT = "GitHub returned no enabled models for this account, so there is nothing to send.";
 
+export const UNSUPPORTED_OS_TEXT =
+  "Prompt Harbor requires macOS. It reaches GitHub Copilot through a companion program that runs on a Mac, " +
+  "and there is no version of that program for this system.";
+
 export const COPILOT_CLI_INSTALL_COMMAND = "brew install --cask copilot-cli";
 
 const RUNTIME_MISSING_TEXT =
