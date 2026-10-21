@@ -3,7 +3,8 @@
 Prompt Harbor is an independent, unofficial Chrome side-panel client for chatting with
 GitHub Copilot through the official [Copilot SDK](https://github.com/github/copilot-sdk),
 which runs in a small companion process on your Mac. It is not affiliated with, sponsored
-by or endorsed by GitHub.
+by or endorsed by GitHub. Its [privacy policy](https://mahata.github.io/promptharbor/privacy/)
+says what it handles, where it keeps it and what goes to GitHub.
 
 **Current status:** the chat panel, the companion, its macOS Keychain storage for your PAT
 and its installer package are built and tested against a scripted fake companion. The
@@ -343,8 +344,10 @@ account. It does not mean approval to distribute this or to offer it to other pe
 
 ## Boundaries
 
-[PRIVACY.md](PRIVACY.md) is the privacy policy, which a Chrome Web Store listing links to.
-This section gives the detail behind it.
+[PRIVACY.md](PRIVACY.md) is the privacy policy. It is published at
+<https://mahata.github.io/promptharbor/privacy/>, the URL the Chrome Web Store listing links
+to, as [Chrome Web Store](#chrome-web-store) describes. This section gives the detail behind
+it.
 
 The extension:
 
@@ -622,7 +625,8 @@ silicon) and `macos-15-intel` (Intel), then package each build and upload the pa
 `companion-darwin-arm64` or
 `companion-darwin-x64`. Those packages are not signed or notarized, and the companion in
 them is signed ad hoc, so they are for testing only. CI uses no secrets and has read-only
-repository access.
+repository access. The Pages workflow, which publishes the privacy policy, is separate: only
+its deploy job can write, only to GitHub Pages, and only for `main`.
 
 The code is organized as:
 
@@ -632,6 +636,7 @@ The code is organized as:
   configuration, build, license notices, install layout, installer and installer package.
 - `src/protocol/`: the messages and extension identity shared by both sides.
 - `src/webstore/`: the Chrome Web Store package of the built extension.
+- `src/site/`: the GitHub Pages build of the privacy policy.
 
 ## Chrome Web Store
 
@@ -655,7 +660,22 @@ under **View public key**, so `dist/` loaded unpacked gets the published extensi
 only one the companion accepts. `EXTENSION_ID` in `src/protocol/identity.ts` names that ID,
 and `pnpm test` checks that `key` and `EXTENSION_ID` agree.
 
-The **Privacy** tab asks for a privacy policy. Link to [PRIVACY.md](PRIVACY.md) on GitHub.
+The **Privacy** tab asks for a privacy policy URL. Give it
+<https://mahata.github.io/promptharbor/privacy/>, which publishes [PRIVACY.md](PRIVACY.md):
+
+```sh
+pnpm site:build
+```
+
+`pnpm site:build` renders PRIVACY.md into `dist-site/privacy/index.html`, a standalone page
+that loads nothing and runs no scripts. It refuses relative links, because PRIVACY.md is read
+both on GitHub and on that page. The Pages workflow, `.github/workflows/pages.yml`, builds the
+page and deploys `dist-site/` to GitHub Pages whenever a push to `main` changes PRIVACY.md or
+`src/site/`, so the published policy is the one on `main`. It also runs from the Actions tab.
+It needs the repository's **Settings → Pages → Source** set to **GitHub Actions**. The URL comes
+from the repository's owner and name, so renaming or transferring the repository moves it, and
+the store listing would then need the new one.
+
 The companion package is not signed or notarized yet, and macOS refuses to open one downloaded
 through a browser, so until it is, people who install the extension from the store have no
 simple way to get the companion.
@@ -695,6 +715,10 @@ simple way to get the companion.
   runtime, which this project no longer uses, so it is not a compatibility floor. Treating it
   as one rejected Copilot CLI 1.0.83, which is what `brew install --cask copilot-cli`
   installed in CI.
+- The SDK's documentation of `CopilotSession.disconnect()` says the session's state on disk,
+  including its conversation history, is kept so that it can be resumed, and points to
+  `CopilotClient.deleteSession` for removing it. Checked against `@github/copilot-sdk` 1.0.19
+  in `node_modules/@github/copilot-sdk/dist/session.d.ts`.
 - Node.js is MIT-licensed and its `LICENSE`, which also covers the libraries built into the
   binary, grants the right to distribute. That is what makes shipping it inside the
   companion executable allowed, and the build includes that file in
