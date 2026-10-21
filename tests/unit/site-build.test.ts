@@ -87,6 +87,13 @@ describe("privacy policy page", () => {
     },
   );
 
+  it.each(["https:example.com/policy", "https:/example.com/policy", "//example.com/policy"])(
+    "refuses a link to %s, which a browser resolves against the page it is on",
+    (href) => {
+      expect(() => renderPrivacyPage(`# Policy\n\nSee [this](${href}).\n`)).toThrow(JSON.stringify(href));
+    },
+  );
+
   it("refuses an image with a relative source", () => {
     expect(() => renderPrivacyPage("# Policy\n\n![Data flow](data-flow.png)\n")).toThrow('"data-flow.png"');
   });

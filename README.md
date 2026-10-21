@@ -668,11 +668,12 @@ pnpm site:build
 ```
 
 `pnpm site:build` renders PRIVACY.md into `dist-site/privacy/index.html`, a standalone page
-that loads nothing and runs no scripts. It refuses relative links, because PRIVACY.md is read
-both on GitHub and on that page, and raw HTML, whose links it could not check. HTML written as
-code is shown as text. The Pages workflow, `.github/workflows/pages.yml`, builds the
-page and deploys `dist-site/` to GitHub Pages whenever a push to `main` changes PRIVACY.md or
-`src/site/`, so the published policy is the one on `main`. It also runs from the Actions tab.
+that loads nothing and runs no scripts. It accepts only links that start with `https://` or
+`mailto:`, because PRIVACY.md is read both on GitHub and on that page, and refuses raw HTML,
+whose links it could not check. HTML written as code is shown as text. The Pages workflow,
+`.github/workflows/pages.yml`, builds the page and deploys `dist-site/` to GitHub Pages
+whenever a push to `main` changes PRIVACY.md or `src/site/`, so the published policy is the
+one on `main`. It also runs from the Actions tab.
 It needs the repository's **Settings → Pages → Source** set to **GitHub Actions**. The URL comes
 from the repository's owner and name, so renaming or transferring the repository moves it, and
 the store listing would then need the new one.

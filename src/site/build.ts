@@ -5,7 +5,7 @@ import { Lexer, Parser, marked } from "marked";
 import type { Token, Tokens } from "marked";
 
 export const PRIVACY_PAGE_PATH = "privacy/index.html";
-const ALLOWED_LINK_PROTOCOLS = new Set(["https:", "mailto:"]);
+const ALLOWED_LINK_PREFIXES = ["https://", "mailto:"];
 const MAX_EXCERPT_LENGTH = 80;
 const SUCCESS = 0;
 const FAILURE = 1;
@@ -114,7 +114,9 @@ function titleText(tokens: readonly Token[]): string {
 }
 
 // The same file is read on GitHub and published on GitHub Pages, and a relative link cannot work
-// in both places. Raw HTML would reach the page as written, so its links would escape this check.
+// in both places. Browsers also resolve https:example.com against the page, like a relative link,
+// so only the full https:// form counts. Raw HTML would reach the page as written, so its links
+// would escape this check.
 function refuseUncheckableContent(tokens: Token[]) {
   marked.walkTokens(tokens, (token) => {
     if (token.type === "html") {
@@ -125,10 +127,10 @@ function refuseUncheckableContent(tokens: Token[]) {
     }
     if (token.type !== "link" && token.type !== "image") return;
     const { href } = token as Tokens.Link | Tokens.Image;
-    if (URL.canParse(href) && ALLOWED_LINK_PROTOCOLS.has(new URL(href).protocol)) return;
+    if (ALLOWED_LINK_PREFIXES.some((prefix) => href.startsWith(prefix)) && URL.canParse(href)) return;
     throw new SiteBuildError(
-      `The privacy policy links to ${JSON.stringify(href)}. Use an absolute https: or mailto: link, because the policy ` +
-        "is read both on GitHub and on GitHub Pages.",
+      `The privacy policy links to ${JSON.stringify(href)}. Use an absolute link that starts with https:// or mailto:, ` +
+        "because the policy is read both on GitHub and on GitHub Pages.",
     );
   });
 }
