@@ -123,6 +123,12 @@ describe("openCompanionBridge", () => {
     ["a protocol version that is not an integer", [{ ...hello, protocolVersion: String(PROTOCOL_VERSION) }]],
     ["protocol version 0", [{ ...hello, protocolVersion: 0 }]],
     ["a saved-token flag that is not a boolean", [{ ...protocol3Hello, savedToken: "yes" }]],
+    ["an older hello without the saved-token flag", [{ type: "hello", protocolVersion: 3, sdkVersion: "1.0.14" }]],
+    [
+      "a newer hello without the saved-token flag",
+      [{ type: "hello", protocolVersion: PROTOCOL_VERSION + 1, sdkVersion: "1.0.14", runtime: "ready" }],
+    ],
+    ["protocol 1's hello with the saved-token flag it never had", [{ type: "hello", protocolVersion: 1, sdkVersion: "1.0.14", savedToken: true }]],
     ["a hello for this protocol version that lacks a field", [{ ...protocol3Hello, protocolVersion: PROTOCOL_VERSION }]],
     ["a hello for this protocol version with an unknown field", [{ ...hello, theme: "dark" }]],
     ["a second hello", [hello, hello]],

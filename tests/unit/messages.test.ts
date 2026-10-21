@@ -197,12 +197,16 @@ describe("hello envelope", () => {
 
   it.each([
     ["a greeting that is not an object", "hello"],
-    ["another message type", { type: "connected", protocolVersion: PROTOCOL_VERSION, models: [] }],
+    ["another message type", { type: "connected", protocolVersion: PROTOCOL_VERSION, savedToken: true, models: [] }],
     ["a missing protocol version", { type: "hello", sdkVersion: "1.0.14", savedToken: true }],
-    ["a protocol version that is a string", { type: "hello", protocolVersion: String(PROTOCOL_VERSION) }],
-    ["a non-integer protocol version", { type: "hello", protocolVersion: 3.5 }],
-    ["protocol version 0", { type: "hello", protocolVersion: 0 }],
+    ["a protocol version that is a string", { type: "hello", protocolVersion: String(PROTOCOL_VERSION), savedToken: true }],
+    ["a non-integer protocol version", { type: "hello", protocolVersion: 3.5, savedToken: true }],
+    ["protocol version 0", { type: "hello", protocolVersion: 0, savedToken: true }],
     ["a saved-token flag that is not a boolean", { type: "hello", protocolVersion: 3, savedToken: "yes" }],
+    ["protocol 3's hello without the saved-token flag", { type: "hello", protocolVersion: 3, sdkVersion: "1.0.14" }],
+    ["this version's hello without the saved-token flag", { type: "hello", protocolVersion: PROTOCOL_VERSION, sdkVersion: "1.0.14" }],
+    ["a newer hello without the saved-token flag", { type: "hello", protocolVersion: PROTOCOL_VERSION + 1, sdkVersion: "1.0.14" }],
+    ["protocol 1's hello with the saved-token flag it never had", { type: "hello", protocolVersion: 1, sdkVersion: "1.0.14", savedToken: false }],
   ])("rejects %s", (_description, value) => {
     expect(parseHelloEnvelope(value)).toBeUndefined();
   });

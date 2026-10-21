@@ -1,7 +1,7 @@
 // The extension and the companion update separately, so a panel can meet a companion of another
-// version. Every version keeps what the panel then needs to say which side is out of date and to let
-// Sign out delete a saved PAT: the hello's type, protocolVersion and savedToken, and forget with its
-// credential replies.
+// version. What the panel then needs, to say which side is out of date and to let Sign out delete a
+// saved PAT, has been the same since protocol 2 and must stay so: the hello's type, protocolVersion and
+// savedToken, and forget with its credential replies.
 export const PROTOCOL_VERSION = 4;
 
 export const MAX_TOKEN_LENGTH = 255;
@@ -146,13 +146,14 @@ export function parseCompanionMessage(value: unknown): CompanionMessage | undefi
   }
 }
 
-// Reads only what every protocol version's hello shares. Protocol 1 could not save a PAT, so its hello
-// had no savedToken.
+// Reads only what the panel needs from a hello of any protocol version. Protocol 1 could not save a PAT,
+// so only its hello lacks savedToken.
 export function parseHelloEnvelope(value: unknown): HelloEnvelope | undefined {
   if (!isJsonObject(value) || value.type !== "hello") return undefined;
-  const { protocolVersion, savedToken = false } = value;
-  if (!isInteger(protocolVersion) || protocolVersion < 1 || typeof savedToken !== "boolean") return undefined;
-  return { protocolVersion, savedToken };
+  const { protocolVersion, savedToken } = value;
+  if (!isInteger(protocolVersion) || protocolVersion < 1) return undefined;
+  if (protocolVersion === 1) return savedToken === undefined ? { protocolVersion, savedToken: false } : undefined;
+  return typeof savedToken === "boolean" ? { protocolVersion, savedToken } : undefined;
 }
 
 function parseHello(value: JsonObject): CompanionMessage | undefined {
