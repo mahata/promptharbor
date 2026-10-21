@@ -247,7 +247,7 @@ async function uninstall({ applicationDirectory, cacheDirectory, companionDirect
   await removeLeftovers(dirname(hostManifestPath), [HOST_MANIFEST_COPY_PREFIX]);
   await rm(companionDirectory, { recursive: true, force: true });
   await rm(configPath, { force: true });
-  // The Copilot CLI runtime the companion had it unpack here is worth about 138 MB.
+  // Holds the Copilot CLI runtime, about 140 to 180 MB per version, and the account details and device ID the CLI keeps.
   await rm(cacheDirectory, { recursive: true, force: true });
   await rmdir(dirname(cacheDirectory)).catch(() => undefined);
   await removeLeftovers(applicationDirectory, LEFTOVER_PREFIXES);
