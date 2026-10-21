@@ -4,7 +4,10 @@ Last updated: October 21, 2026
 
 Prompt Harbor is an independent, unofficial Chrome extension for chatting with GitHub Copilot
 from Chrome's side panel, through a companion program on your Mac. It is not affiliated with,
-sponsored by or endorsed by GitHub. This policy covers the extension and its companion.
+sponsored by or endorsed by GitHub. This policy covers the extension and its companion. The
+companion drives the GitHub Copilot CLI that you install yourself. The CLI is GitHub's software,
+not part of Prompt Harbor, but this policy also says what the CLI keeps on your Mac when the
+companion runs it.
 
 ## In short
 
@@ -13,9 +16,14 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
 - The extension cannot reach the network. It talks only to the companion on your Mac, which
   sends your requests to GitHub through the GitHub Copilot CLI you installed.
 - What goes to GitHub is what Prompt Harbor needs to chat with GitHub Copilot for you: your
-  personal access token (PAT), your prompts, and the pages you choose to include.
+  personal access token (PAT), your prompts, and the pages you choose to include. The GitHub
+  Copilot CLI also sends GitHub its own telemetry.
 - The companion always saves your PAT in your macOS login keychain until you sign out. Other
   programs running as your macOS user can read it there.
+- On your Mac, the GitHub Copilot CLI keeps a log of your conversation until the companion
+  stops, and your Copilot account details and a device identifier until you uninstall the
+  companion. The sections below say what stays on your Mac, for how long, and how to delete
+  it.
 
 ## What Prompt Harbor handles, and why
 
@@ -23,14 +31,17 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
   through Chrome native messaging. The companion uses it to sign in to GitHub Copilot through
   the GitHub Copilot SDK and the GitHub Copilot CLI. Once GitHub accepts it, the companion
   always saves it in your macOS login keychain, and signs in with it again each time you open
-  the panel, until you sign out. There is no option to use a PAT without saving it. It is
-  never stored in Chrome.
+  the panel, until you sign out. There is no option to use a PAT without saving it. While
+  connected, the companion and the GitHub Copilot CLI also hold it in memory. It is never
+  stored in Chrome.
 - **Your prompts and Copilot's replies**, when you send a prompt. Each prompt goes to GitHub
   Copilot with the conversation so far, so that Copilot can reply. The panel keeps the
-  conversation only in memory. While the companion runs, the GitHub Copilot CLI also keeps a
-  session log of your prompts and replies in a private temporary folder on your Mac, which the
-  companion deletes when it stops. In checks with two versions of the CLI, it wrote none of
-  them to the cache folder below.
+  conversation only in memory. The GitHub Copilot CLI also writes a session log of your
+  prompts and Copilot's replies, but not your PAT, into a private temporary folder
+  (`$TMPDIR/prompt-harbor-*`) that the companion creates when it connects and deletes when it
+  stops. **New chat** starts a new log in the same folder and leaves the earlier one there. In
+  checks with two versions of the CLI, it wrote none of your prompts or replies to the cache
+  folder below.
 - **Your Copilot account details and a device identifier**, which the GitHub Copilot CLI keeps
   in the companion's cache folder, `~/Library/Caches/prompt-harbor/copilot-cli/`. The
   companion keeps that folder so the CLI need not unpack its program files again on every
@@ -42,10 +53,11 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
   1.0.99-2 of the CLI, which is not part of Prompt Harbor; other versions may differ.
 - **The page you are viewing**, only when you tick **Include this page** for a prompt. The
   panel reads the tab's title, URL, visible text and any text you selected, and sends them to
-  GitHub Copilot with that one prompt. The page then stays in the conversation.
+  GitHub Copilot with that one prompt. The page then stays in the conversation, and in the
+  session log, like a prompt.
 - **Your GitHub username and the model you last chose**, once you are connected. The panel
   stores them in the extension's local storage in Chrome, so it can preselect that model the
-  next time you connect with that account. They are not sent anywhere.
+  next time you connect with that account. This stored copy is not sent anywhere.
 
 ## Who receives it
 
@@ -53,7 +65,9 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
   chose go to GitHub, together with the request metadata and telemetry that the GitHub Copilot
   CLI sends, which can include that device identifier. The companion identifies itself to the
   CLI as `prompt-harbor`, which labels that telemetry, and neither configures nor suppresses
-  it. GitHub handles this data under the
+  it. It runs the CLI with a temporary configuration of its own rather than your `~/.copilot`
+  folder, so settings you made for the CLI yourself do not apply. GitHub handles this data
+  under the
   [GitHub General Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)
   and the terms of your GitHub Copilot plan.
 - **No one else.** Prompt Harbor's developer does not receive, sell or transfer your data, and
@@ -61,20 +75,48 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
 
 ## How long it is kept
 
-- **Saved PAT:** in your macOS login keychain until you choose **Sign out**, or until you
-  choose to delete it when you uninstall the companion.
-- **Conversation:** in the panel's memory until you choose **New chat** or **Sign out**, or
-  close the panel. The CLI's session log keeps it, including conversations you left with
-  **New chat**, until the companion stops and deletes its temporary folder. If Chrome has to
-  force-quit the companion, that folder (`$TMPDIR/prompt-harbor-*`) can remain until you
+- **Saved PAT:** in your macOS login keychain until you choose **Sign out** or delete it
+  yourself, or choose to delete it when you uninstall the companion.
+- **Conversation in the panel:** in memory until you choose **New chat** or **Sign out**, or
+  close the panel.
+- **Session logs:** in the temporary folder, including those of conversations you left with
+  **New chat**, until the companion stops, such as when you close the panel or choose
+  **Sign out**. If Chrome has to force-quit the companion, the folder can remain until you
   delete it.
 - **Copilot account details and device identifier:** in
   `~/Library/Caches/prompt-harbor/copilot-cli/` until you uninstall the companion or delete
-  that folder. The CLI may refresh the account details when you connect, and keeps the device
-  identifier, so it stays the same across connections.
+  that folder. **Sign out** does not remove them. The CLI may refresh the account details when
+  you connect, and keeps the device identifier, so it stays the same across connections.
 - **Username and model choice:** in Chrome until you remove the extension.
 - **What GitHub received:** as GitHub's policies say. Signing out, starting a new chat or
   closing the panel does not retract anything already sent.
+
+## Deleting your data
+
+- **Sign out** in the panel deletes the saved PAT and stops the companion, which deletes its
+  temporary folder.
+- To delete the saved PAT yourself, delete the `io.github.mahata.prompt_harbor` item in
+  Keychain Access, or run:
+
+  ```sh
+  security delete-generic-password -s io.github.mahata.prompt_harbor -a fine-grained-pat login.keychain
+  ```
+
+- Uninstalling the companion removes it and its cache folder in
+  `~/Library/Caches/prompt-harbor/`, and asks whether to delete the saved PAT too:
+
+  ```sh
+  "$HOME/Library/Application Support/prompt-harbor/companion/uninstall"
+  ```
+
+- To delete the Copilot account details and device identifier but keep the companion, delete
+  `~/Library/Caches/prompt-harbor/copilot-cli/`. The next connection is slower while the CLI
+  unpacks its program files again.
+- Removing the extension in `chrome://extensions` deletes the username and model choice it
+  stored.
+- If Chrome force-quit the companion, delete any `prompt-harbor-*` folder it left in your
+  temporary folder (`$TMPDIR`).
+- Revoke the PAT on GitHub at any time. For what GitHub holds, see GitHub's privacy statement.
 
 ## Your choices
 
@@ -82,10 +124,7 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
   can carry secrets such as session or password-reset tokens.
 - Use a PAT that expires soon and has only the Copilot Requests permission. Prompt Harbor
   always saves the PAT, so this limits what anyone who reads it can do, and for how long.
-- **Sign out** deletes the saved PAT, so signing out when you are done leaves no PAT saved.
-  You can also revoke the PAT on GitHub at any time.
-- Uninstalling the companion removes it, its cache folder and, if you choose, the saved PAT.
-  Removing the extension from Chrome removes what it stored in Chrome.
+- Sign out when you are done, so that no PAT stays saved.
 
 ## Security
 
@@ -106,5 +145,10 @@ requirements.
 
 ## Changes and contact
 
-Changes to this policy are made in this file, and the repository's history shows each one.
-For questions, open an issue at <https://github.com/mahata/promptharbor/issues>.
+This policy is kept in the Prompt Harbor repository as
+[PRIVACY.md](https://github.com/mahata/promptharbor/blob/main/PRIVACY.md), and
+[its history](https://github.com/mahata/promptharbor/commits/main/PRIVACY.md) shows every
+change. It is published at <https://mahata.github.io/promptharbor/privacy/>.
+
+For questions about privacy, open an issue at <https://github.com/mahata/promptharbor/issues>.
+Issues are public, so do not put your PAT or other private information in one.
