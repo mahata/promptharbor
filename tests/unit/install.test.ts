@@ -296,12 +296,22 @@ describe("runInstaller", () => {
     expect(existsSync(otherHostManifest)).toBe(true);
   });
 
-  it("removes the cache the Copilot CLI unpacked its runtime into, leaving other caches alone", async () => {
+  it("removes the cache with everything the Copilot CLI keeps there, leaving other caches alone", async () => {
     await install();
     const { cacheDirectory } = companionInstallPaths(home);
     const cachesDirectory = dirname(dirname(cacheDirectory));
-    mkdirSync(join(cacheDirectory, "pkg", "darwin-arm64"), { recursive: true });
-    writeFileSync(join(cacheDirectory, "pkg", "darwin-arm64", "runtime"), "unpacked runtime");
+    // What a real conversation left in the cache, seen in #39: runtimes, an account cache and a device ID.
+    const keptByCopilotCli = [
+      "Library/Caches/copilot/pkg/darwin-arm64/1.0.92-4/index.js",
+      "Library/Caches/copilot/pkg/darwin-arm64/1.0.99-2/index.js",
+      "Library/Caches/copilot/copilot-user-cache.json",
+      "Library/Caches/copilot/copilot-user-cache.json.lock",
+      "Library/Application Support/Microsoft/DeveloperTools/deviceid",
+    ];
+    for (const path of keptByCopilotCli) {
+      mkdirSync(dirname(join(cacheDirectory, path)), { recursive: true });
+      writeFileSync(join(cacheDirectory, path), "kept by the Copilot CLI");
+    }
     const otherCache = join(cachesDirectory, "com.example.other");
     mkdirSync(otherCache, { recursive: true });
     writeFileSync(join(otherCache, "data"), "someone else's");

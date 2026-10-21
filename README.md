@@ -160,11 +160,15 @@ keeps no package receipt, and `pkgutil --pkgs` does not list it. The companion i
   extension ID from `src/protocol/identity.ts`, which the companion checks too and a test
   ties to the manifest's `key`.
 
-The companion also creates `~/Library/Caches/prompt-harbor/copilot-cli/`, the only thing it
-writes while it runs. The GitHub Copilot CLI unpacks its runtime into whatever `HOME` it is
-given, about 138 MB, so the companion gives it this directory: without a stable one it would
-do that again on every connection. Uninstalling removes it, and deleting it yourself only
-costs one slower connection.
+Apart from a PAT saved in your login keychain, the only thing the companion adds to your home
+folder as it runs is `~/Library/Caches/prompt-harbor/copilot-cli/`. The GitHub Copilot CLI
+unpacks its runtime into whatever `HOME` it is given, about 140 to 180 MB depending on its
+version, so the companion gives it this directory: without a stable one it would do that
+again on every connection. The CLI also keeps a copy of your Copilot account details and a
+device identifier there; when checked, it kept none of your prompts, replies or PAT there.
+[Boundaries](#boundaries) lists what it holds and for how long. Uninstalling removes it.
+Deleting it yourself is harmless: the next connection is slower while the runtime unpacks
+again, and the CLI then creates a new device identifier.
 
 The package carries no GitHub Copilot software, so there is nothing of GitHub's to
 redistribute. It drives the Copilot CLI you installed.
@@ -406,8 +410,8 @@ The companion:
   banner only as a whole line, so a program whose output merely mentions the Copilot CLI
   cannot pass as one. The limit is that
   generous because the first run in a home folder the Copilot CLI has not used unpacks its
-  runtime, about 138 MB, before printing anything; a shorter one would kill a working CLI
-  mid-unpack and report it as not the Copilot CLI. It applies no version
+  runtime, about 140 to 180 MB, before printing anything; a shorter one would kill a
+  working CLI mid-unpack and report it as not the Copilot CLI. It applies no version
   floor of its own. The SDK negotiates a protocol version with the CLI when it starts it,
   and refuses one it cannot speak in either direction, so that handshake decides
   compatibility and reports `runtime_unsupported`. An earlier version of this companion did
@@ -430,6 +434,24 @@ The companion:
   of its environment is a system `PATH` and the variables the SDK adds, so tokens such as
   `GH_TOKEN` are not passed on. Neither are proxy and custom CA settings such as
   `HTTPS_PROXY` or `NODE_EXTRA_CA_CERTS`, so networks that require them will not work.
+- Does not control what the Copilot CLI writes in those two directories. After real
+  conversations through the panel, including **New chat**, with Copilot CLI 1.0.92-4 and
+  1.0.99-2 ([#39](https://github.com/mahata/promptharbor/issues/39)):
+  - The temporary directory held the CLI's settings and log, and a session log for each
+    conversation (`session-state/<id>/events.jsonl`) with your prompts and Copilot's
+    replies, but not the PAT. The companion deletes the directory when it stops.
+  - `~/Library/Caches/prompt-harbor/copilot-cli/` contained none of those prompts or replies,
+    no string shaped like a PAT or other GitHub token, and no telemetry queue. It holds the
+    CLI's runtime in `Library/Caches/copilot/pkg/`, one directory for each CLI version the
+    companion has run. Nothing prunes them: the CLI left the earlier one in place when it
+    unpacked another. Next to `pkg/`, `copilot-user-cache.json` is a copy of what GitHub
+    reports about your Copilot account, including your username, plan and entitlements,
+    organization and enterprise memberships, quotas, feature settings and an analytics
+    tracking ID, filed under an opaque key that is not the PAT. The CLI may rewrite it when
+    you connect. `Library/Application Support/Microsoft/DeveloperTools/deviceid` is a random
+    UUID the CLI keeps as a device identifier, which its code lists among its telemetry
+    properties; it stayed the same across connections. All of it stays until you uninstall
+    the companion or delete the directory.
 - Puts an attached page ahead of your prompt, between markers, with an instruction to treat
   it as data rather than instructions.
 - Enforces limits: 1 MiB per inbound message, 1 MiB per outbound message (Chrome's
@@ -479,9 +501,20 @@ Accepted risks:
   The companion never sends the PAT back. Loading such an extension requires access to
   your Chrome profile.
 - While the companion runs, the runtime's session log in its temporary directory holds your
-  prompts and replies, but not the token. If the companion is still running a few seconds
-  after the panel disconnects, Chrome force-quits it, and that directory
-  (`$TMPDIR/prompt-harbor-*`) can then remain. Delete leftovers by hand.
+  prompts and replies, but not the token, including those of conversations you left with
+  **New chat**. None of it reached `~/Library/Caches/prompt-harbor/copilot-cli/` when
+  checked. If the companion is still running a few seconds after the panel disconnects,
+  Chrome force-quits it, and that directory (`$TMPDIR/prompt-harbor-*`) can then remain.
+  Delete leftovers by hand.
+- Between connections, `~/Library/Caches/prompt-harbor/copilot-cli/` keeps the Copilot
+  account details and device identifier described above. Any process running as your macOS
+  user can read them. If the CLI sends the identifier with its telemetry, as its code
+  suggests, it marks the telemetry from all your connections as coming from one device.
+  Keeping them out of that directory would mean relying on Copilot CLI internals that are
+  not documented, such as its undocumented cache settings or the names of the files it
+  keeps, so the companion leaves them there
+  ([#39](https://github.com/mahata/promptharbor/issues/39)). Uninstall the companion or
+  delete the directory to remove them.
 - The runtime keeps its default integration ID, `copilot-developer-cli`. The companion only
   names itself `prompt-harbor` in the SDK's `clientInfo`, which labels the runtime's
   telemetry.
@@ -541,7 +574,8 @@ that build and a package made from it:
   runtime's temporary directory already removed. It first checks that the sandbox really
   blocks a connection.
 - It installs itself into a temporary home folder and uninstalls through its uninstall
-  script there. The installer command does the same with a copy.
+  script there, which also removes the Copilot CLI cache its greeting created. The
+  installer command does the same with a copy.
 - The package installs only for the current user and carries the build unchanged.
   Installed with `installer` into a temporary home folder, it installs a companion that
   starts, replaces an earlier install completely, fails without touching the earlier
@@ -640,6 +674,16 @@ simple way to get the companion.
   `--headless --no-auto-update --stdio` flags, saying "Path to Copilot CLI is required"
   when it has none. Checked against `@github/copilot-sdk` 1.0.14 in
   `node_modules/@github/copilot-sdk/dist/client.js`.
+- Checked here ([#39](https://github.com/mahata/promptharbor/issues/39)): after real
+  conversations through the panel with Copilot CLI 1.0.92-4 and 1.0.99-2, unique strings
+  from the prompts and replies were in the session logs in the companion's temporary
+  directory, which it deleted on closing, and nowhere in
+  `~/Library/Caches/prompt-harbor/copilot-cli/`, which held no token-shaped string either.
+  The package loader of CLI 1.0.92-4 removes only interrupted extractions from `pkg/`, not
+  earlier versions, and on the Mac checked, the CLI's own `~/Library/Caches/copilot/pkg/`
+  held eight. The device identifier's role comes from strings in the CLI's native runtime,
+  which list `dev_device_id` among its telemetry properties; no network traffic was
+  captured.
 - Checked here: the SDK drives an installed Copilot CLI. Against
   `/opt/homebrew/bin/copilot` 1.0.89-3, `start()` succeeded, `getAuthStatus()` returned
   `{"isAuthenticated":false,...}` for a deliberately invalid PAT, and `listModels()` failed

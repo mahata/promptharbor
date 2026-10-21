@@ -29,7 +29,17 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
   Copilot with the conversation so far, so that Copilot can reply. The panel keeps the
   conversation only in memory. While the companion runs, the GitHub Copilot CLI also keeps a
   session log of your prompts and replies in a private temporary folder on your Mac, which the
-  companion deletes when it stops.
+  companion deletes when it stops. In checks with two versions of the CLI, it wrote none of
+  them to the cache folder below.
+- **Your Copilot account details and a device identifier**, which the GitHub Copilot CLI keeps
+  in the companion's cache folder, `~/Library/Caches/prompt-harbor/copilot-cli/`. The
+  companion keeps that folder so the CLI need not unpack its program files again on every
+  connection. When you connect, the CLI saves what GitHub reports about your Copilot account
+  there, including your username, plan and entitlements, organization and enterprise
+  memberships, quotas, feature settings and an analytics tracking ID. It also creates a
+  random device identifier there, which it can send with its telemetry. Besides these, the
+  folder holds the CLI's program files and lock files. This describes versions 1.0.92-4 and
+  1.0.99-2 of the CLI, which is not part of Prompt Harbor; other versions may differ.
 - **The page you are viewing**, only when you tick **Include this page** for a prompt. The
   panel reads the tab's title, URL, visible text and any text you selected, and sends them to
   GitHub Copilot with that one prompt. The page then stays in the conversation.
@@ -41,8 +51,9 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
 
 - **GitHub.** Your PAT, prompts, included pages, the conversation so far and the model you
   chose go to GitHub, together with the request metadata and telemetry that the GitHub Copilot
-  CLI sends. The companion identifies itself to the CLI as `prompt-harbor`, which labels that
-  telemetry, and neither configures nor suppresses it. GitHub handles this data under the
+  CLI sends, which can include that device identifier. The companion identifies itself to the
+  CLI as `prompt-harbor`, which labels that telemetry, and neither configures nor suppresses
+  it. GitHub handles this data under the
   [GitHub General Privacy Statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)
   and the terms of your GitHub Copilot plan.
 - **No one else.** Prompt Harbor's developer does not receive, sell or transfer your data, and
@@ -53,8 +64,14 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
 - **Saved PAT:** in your macOS login keychain until you choose **Sign out**, or until you
   choose to delete it when you uninstall the companion.
 - **Conversation:** in the panel's memory until you choose **New chat** or **Sign out**, or
-  close the panel. If Chrome has to force-quit the companion, the CLI's temporary folder
-  (`$TMPDIR/prompt-harbor-*`) can remain until you delete it.
+  close the panel. The CLI's session log keeps it, including conversations you left with
+  **New chat**, until the companion stops and deletes its temporary folder. If Chrome has to
+  force-quit the companion, that folder (`$TMPDIR/prompt-harbor-*`) can remain until you
+  delete it.
+- **Copilot account details and device identifier:** in
+  `~/Library/Caches/prompt-harbor/copilot-cli/` until you uninstall the companion or delete
+  that folder. The CLI may refresh the account details when you connect, and keeps the device
+  identifier, so it stays the same across connections.
 - **Username and model choice:** in Chrome until you remove the extension.
 - **What GitHub received:** as GitHub's policies say. Signing out, starting a new chat or
   closing the panel does not retract anything already sent.
@@ -67,8 +84,8 @@ sponsored by or endorsed by GitHub. This policy covers the extension and its com
   always saves the PAT, so this limits what anyone who reads it can do, and for how long.
 - **Sign out** deletes the saved PAT, so signing out when you are done leaves no PAT saved.
   You can also revoke the PAT on GitHub at any time.
-- Uninstalling the companion removes it and, if you choose, the saved PAT. Removing the
-  extension from Chrome removes what it stored in Chrome.
+- Uninstalling the companion removes it, its cache folder and, if you choose, the saved PAT.
+  Removing the extension from Chrome removes what it stored in Chrome.
 
 ## Security
 
