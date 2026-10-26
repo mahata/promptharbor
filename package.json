@@ -22,17 +22,17 @@
     "site:build": "node src/site/build-cli.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.0",
+    "@playwright/test": "^1.64.1",
     "@types/chrome": "^0.3.5",
     "@types/node": "^26.6.5",
-    "rolldown": "^1.2.13",
+    "rolldown": "^1.2.14",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^1.0.19",
-    "marked": "^18.1.0"
+    "@github/copilot-sdk": "^1.0.22",
+    "marked": "^18.1.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
